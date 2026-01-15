@@ -18,6 +18,7 @@ namespace Client.AI.Tasks
         
         public override bool Start(AutomatedGame game)
         {
+            base.Start(game);
             game.Log($"LogMessage: {message}", logLevel);
             return true;
         }
