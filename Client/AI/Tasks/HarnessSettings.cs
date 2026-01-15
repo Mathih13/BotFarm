@@ -56,6 +56,18 @@ namespace Client.AI.Tasks
         /// Timeout in seconds for route completion
         /// </summary>
         public int TestTimeoutSeconds { get; set; } = 600;
+
+        /// <summary>
+        /// Name of a snapshot to restore before running this test.
+        /// The character will be restored to this saved state before execution.
+        /// </summary>
+        public string RestoreSnapshot { get; set; }
+
+        /// <summary>
+        /// Name of a snapshot to save after completing this test.
+        /// The character state will be saved for use by dependent tests.
+        /// </summary>
+        public string SaveSnapshot { get; set; }
     }
 
     /// <summary>

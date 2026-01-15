@@ -405,11 +405,13 @@ Client/AutomatedGame.cs - Added IsQuestInLog() helper
 
 ---
 
-## Phase 3: Advanced Test Features (Planned)
+## Phase 3: Advanced Test Features (Implemented)
 
-### Test Dependencies
+### Test Suites & Dependencies
 
-Run tests in order with dependencies:
+**File:** `BotFarm/Testing/TestSuite.cs`
+
+Run tests in order with dependencies using suite definition files:
 ```json
 {
   "name": "Full Northshire Suite",
@@ -421,14 +423,30 @@ Run tests in order with dependencies:
 }
 ```
 
+**Test Suite Coordinator:** `BotFarm/Testing/TestSuiteCoordinator.cs`
+- Loads suite JSON files
+- Validates dependency graph (detects cycles, missing dependencies)
+- Executes tests in topological order
+- Skips dependent tests when dependencies fail
+
 ### Parallel Test Execution
 
-Run multiple independent tests simultaneously:
+Run multiple independent tests at the same dependency level in parallel:
 ```
-test run-suite northshire-suite.json --parallel
+test run-suite routes/suites/northshire-suite.json --parallel
 ```
 
+**Parallel Mode:**
+- Groups tests by dependency level
+- Level 0: Tests with no dependencies (run in parallel)
+- Level 1: Tests depending only on Level 0 (run in parallel after Level 0 completes)
+- And so on...
+
 ### Test Snapshots
+
+**Files:**
+- `BotFarm/Testing/SnapshotManager.cs` - Snapshot orchestration
+- `BotFarm/Testing/DatabaseAccess.cs` - MySQL snapshot operations
 
 Save and restore character state between tests:
 ```json
@@ -439,6 +457,41 @@ Save and restore character state between tests:
   }
 }
 ```
+
+**Snapshot Data Captured:**
+- Character level, XP, money
+- Position (map, X, Y, Z, orientation)
+- Completed quests
+
+**Database Tables:**
+- `test_snapshots` - Main snapshot data
+- `test_snapshot_quests` - Completed quests per snapshot
+
+### Console Commands
+
+```
+test run-suite <suitefile> [--parallel] - Run a test suite
+test suite-status [suiteId]             - Show suite status
+test suite-list                         - List all suite runs
+test suite-stop <suiteId>               - Stop a running suite
+```
+
+### Implementation Files
+
+```
+BotFarm/Testing/TestSuite.cs            - Suite and suite run models
+BotFarm/Testing/TestSuiteCoordinator.cs - Suite execution orchestration
+BotFarm/Testing/SnapshotManager.cs      - Snapshot save/restore logic
+BotFarm/Testing/DatabaseAccess.cs       - MySQL snapshot methods (extended)
+BotFarm/Testing/TestRunCoordinator.cs   - Snapshot integration
+Client/AI/Tasks/HarnessSettings.cs      - RestoreSnapshot/SaveSnapshot fields
+BotFarm/AI/Tasks/TaskRouteLoader.cs     - Snapshot JSON parsing
+BotFarm/BotFactory.cs                   - Suite commands
+```
+
+### Example Test Suite
+
+**File:** `routes/suites/northshire-suite.json`
 
 ---
 

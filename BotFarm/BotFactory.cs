@@ -37,6 +37,8 @@ namespace BotFarm
         Random randomGenerator = new Random();
         Dictionary<string, BotBehaviorSettings> botBehaviors = new Dictionary<string, BotBehaviorSettings>();
         TestRunCoordinator testCoordinator;
+        TestSuiteCoordinator suiteCoordinator;
+        SnapshotManager snapshotManager;
 
         public BotFactory()
         {
@@ -173,8 +175,15 @@ namespace BotFarm
                 }
                 logger.Flush();
 
+                // Initialize snapshot manager (requires database)
+                snapshotManager = new SnapshotManager(databaseAccess);
+                if (databaseAccess != null)
+                {
+                    snapshotManager.EnsureTablesExist();
+                }
+
                 // Initialize test coordinator
-                testCoordinator = new TestRunCoordinator(this);
+                testCoordinator = new TestRunCoordinator(this, snapshotManager);
                 testCoordinator.TestRunStarted += (s, run) => Log($"Test run started: {run.Id}");
                 testCoordinator.TestRunCompleted += (s, run) =>
                 {
@@ -183,6 +192,12 @@ namespace BotFarm
                 };
                 testCoordinator.BotCompleted += (s, args) =>
                     Log($"Bot {args.bot.BotName} completed: {(args.bot.Success ? "PASS" : "FAIL")}");
+
+                // Initialize test suite coordinator
+                suiteCoordinator = new TestSuiteCoordinator(this, testCoordinator);
+                suiteCoordinator.SuiteStarted += (s, suite) => Log($"Test suite started: {suite.Id} - {suite.SuiteName}");
+                suiteCoordinator.SuiteCompleted += (s, suite) =>
+                    Log($"Test suite completed: {suite.Id} - Status: {suite.Status} ({suite.TestsPassed}/{suite.TotalTests} passed)");
             }
             catch (Exception ex)
             {
@@ -567,11 +582,15 @@ namespace BotFarm
             {
                 Console.WriteLine("Usage: test <command> [args...]");
                 Console.WriteLine("Commands:");
-                Console.WriteLine("  test run <routefile>       - Start a test run with harness settings");
-                Console.WriteLine("  test status [runId]        - Show status of test runs");
-                Console.WriteLine("  test report <runId> [json] - Generate report for a test run");
-                Console.WriteLine("  test list                  - List all test runs");
-                Console.WriteLine("  test stop <runId>          - Stop a running test");
+                Console.WriteLine("  test run <routefile>           - Start a test run with harness settings");
+                Console.WriteLine("  test run-suite <suitefile> [--parallel] - Run a test suite");
+                Console.WriteLine("  test status [runId]            - Show status of test runs");
+                Console.WriteLine("  test suite-status [suiteId]    - Show status of suite runs");
+                Console.WriteLine("  test report <runId> [json]     - Generate report for a test run");
+                Console.WriteLine("  test list                      - List all test runs");
+                Console.WriteLine("  test suite-list                - List all suite runs");
+                Console.WriteLine("  test stop <runId>              - Stop a running test");
+                Console.WriteLine("  test suite-stop <suiteId>      - Stop a running suite");
                 return;
             }
 
@@ -698,10 +717,121 @@ namespace BotFarm
                     }
                     break;
 
+                // ========== Test Suite Commands ==========
+                case "run-suite":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test run-suite <suitefile> [--parallel]");
+                        return;
+                    }
+                    string suitePath = args[2];
+                    if (!System.IO.Path.IsPathRooted(suitePath))
+                    {
+                        suitePath = System.IO.Path.Combine("routes", "suites", suitePath);
+                    }
+                    if (!File.Exists(suitePath))
+                    {
+                        // Try without suites subdirectory
+                        suitePath = System.IO.Path.Combine("routes", args[2]);
+                        if (!File.Exists(suitePath))
+                        {
+                            Console.WriteLine($"Suite file not found: {args[2]}");
+                            return;
+                        }
+                    }
+                    bool parallel = args.Length > 3 && args[3].ToLower() == "--parallel";
+
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var suite = await suiteCoordinator.StartSuiteRunAsync(suitePath, parallel);
+                            Log($"Test suite {suite.Id} finished with status: {suite.Status}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Test suite failed: {ex.Message}", LogLevel.Error);
+                        }
+                    });
+                    Console.WriteLine($"Test suite started: {suitePath}" + (parallel ? " (parallel mode)" : ""));
+                    break;
+
+                case "suite-status":
+                    if (args.Length >= 3)
+                    {
+                        var specificSuite = suiteCoordinator.GetSuiteRun(args[2]);
+                        if (specificSuite != null)
+                        {
+                            DisplaySuiteRunStatus(specificSuite);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Suite run '{args[2]}' not found");
+                        }
+                    }
+                    else
+                    {
+                        var activeSuites = suiteCoordinator.ActiveSuites;
+                        if (activeSuites.Count == 0)
+                        {
+                            Console.WriteLine("No active suite runs");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Active suite runs: {activeSuites.Count}");
+                            foreach (var kvp in activeSuites)
+                            {
+                                DisplaySuiteRunStatus(kvp.Value);
+                            }
+                        }
+                    }
+                    break;
+
+                case "suite-list":
+                    Console.WriteLine("=== Active Suite Runs ===");
+                    foreach (var kvp in suiteCoordinator.ActiveSuites)
+                    {
+                        Console.WriteLine($"  {kvp.Key}: {kvp.Value.SuiteName} - {kvp.Value.Status} ({kvp.Value.TestRuns.Count}/{kvp.Value.TotalTests} tests)");
+                    }
+                    Console.WriteLine("=== Completed Suite Runs ===");
+                    foreach (var completedSuite in suiteCoordinator.CompletedSuites)
+                    {
+                        string statusSymbol = completedSuite.Status == TestSuiteRunStatus.Completed ? "[OK]" : "[X]";
+                        Console.WriteLine($"  {completedSuite.Id}: {completedSuite.SuiteName} - {statusSymbol} {completedSuite.Status} ({completedSuite.TestsPassed}/{completedSuite.TotalTests} passed)");
+                    }
+                    break;
+
+                case "suite-stop":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test suite-stop <suiteId>");
+                        return;
+                    }
+                    if (suiteCoordinator.StopSuiteRun(args[2]))
+                    {
+                        Console.WriteLine($"Stopping suite run {args[2]}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Suite run '{args[2]}' not found or already completed");
+                    }
+                    break;
+
                 default:
                     Console.WriteLine($"Unknown test command: {command}");
                     break;
             }
+        }
+
+        void DisplaySuiteRunStatus(TestSuiteRun suite)
+        {
+            Console.WriteLine($"Suite Run: {suite.Id}");
+            Console.WriteLine($"  Name: {suite.SuiteName}");
+            Console.WriteLine($"  Status: {suite.Status}");
+            Console.WriteLine($"  Mode: {(suite.ParallelMode ? "Parallel" : "Sequential")}");
+            Console.WriteLine($"  Tests: {suite.TestRuns.Count}/{suite.TotalTests}");
+            Console.WriteLine($"  Passed: {suite.TestsPassed}, Failed: {suite.TestsFailed}, Skipped: {suite.TestsSkipped}");
+            Console.WriteLine($"  Duration: {suite.Duration.TotalSeconds:F1}s");
         }
 
         void DisplayTestRunStatus(TestRun run)

@@ -15,6 +15,7 @@ namespace BotFarm.Testing
     internal class TestRunCoordinator
     {
         private readonly BotFactory factory;
+        private readonly SnapshotManager snapshotManager;
         private readonly Dictionary<string, TestRun> activeRuns = new Dictionary<string, TestRun>();
         private readonly List<TestRun> completedRuns = new List<TestRun>();
         private readonly object runLock = new object();
@@ -23,9 +24,10 @@ namespace BotFarm.Testing
         public event EventHandler<TestRun> TestRunCompleted;
         public event EventHandler<(TestRun run, BotTestResult bot)> BotCompleted;
 
-        public TestRunCoordinator(BotFactory factory)
+        public TestRunCoordinator(BotFactory factory, SnapshotManager snapshotManager = null)
         {
             this.factory = factory ?? throw new ArgumentNullException(nameof(factory));
+            this.snapshotManager = snapshotManager;
         }
 
         public IReadOnlyList<TestRun> CompletedRuns
@@ -102,7 +104,8 @@ namespace BotFarm.Testing
                 // Bots must log in to create characters, then log out for level/item/quest setup
                 bool needsSetup = harness.Level > 1
                     || (harness.Items?.Count > 0)
-                    || (harness.CompletedQuests?.Count > 0);
+                    || (harness.CompletedQuests?.Count > 0)
+                    || !string.IsNullOrEmpty(harness.RestoreSnapshot);
 
                 factory.Log($"Phase 1: Creating {harness.BotCount} bot accounts and characters...");
 
@@ -155,6 +158,19 @@ namespace BotFarm.Testing
                     foreach (var kvp in characterNames)
                     {
                         factory.SetupCharacterViaRA(kvp.Value, harness.Level, harness.Items, harness.CompletedQuests);
+                    }
+
+                    // Restore snapshot if specified (character must be offline)
+                    if (!string.IsNullOrEmpty(harness.RestoreSnapshot) && snapshotManager?.IsAvailable == true)
+                    {
+                        factory.Log($"Restoring snapshot '{harness.RestoreSnapshot}' for all characters...");
+                        foreach (var kvp in characterNames)
+                        {
+                            if (!snapshotManager.RestoreSnapshot(harness.RestoreSnapshot, kvp.Value))
+                            {
+                                factory.Log($"Warning: Failed to restore snapshot for {kvp.Value}");
+                            }
+                        }
                     }
 
                     await Task.Delay(500, ct); // Brief wait for RA commands
@@ -286,6 +302,32 @@ namespace BotFarm.Testing
                 {
                     testRun.Complete(true);
                     factory.Log($"Test run {testRun.Id} completed successfully: {testRun.BotsPassed}/{testBots.Count} passed");
+
+                    // Save snapshot if specified and test passed (must log out first)
+                    if (!string.IsNullOrEmpty(harness.SaveSnapshot) && snapshotManager?.IsAvailable == true)
+                    {
+                        factory.Log($"Saving snapshot '{harness.SaveSnapshot}' for successful test...");
+
+                        // Log out all bots first (snapshot requires offline character)
+                        await Task.WhenAll(testBots.Select(bot => bot.Exit()));
+                        await Task.Delay(1000); // Wait for server to process logout
+
+                        // Save snapshot for first character (snapshots are per-character, use first bot as representative)
+                        if (characterNames.TryGetValue(0, out var firstCharName))
+                        {
+                            if (snapshotManager.SaveSnapshot(harness.SaveSnapshot, firstCharName))
+                            {
+                                factory.Log($"Snapshot '{harness.SaveSnapshot}' saved from character {firstCharName}");
+                            }
+                            else
+                            {
+                                factory.Log($"Warning: Failed to save snapshot '{harness.SaveSnapshot}'");
+                            }
+                        }
+
+                        // Clear testBots so they don't get disposed again in finally block
+                        testBots.Clear();
+                    }
                 }
             }
             catch (OperationCanceledException)

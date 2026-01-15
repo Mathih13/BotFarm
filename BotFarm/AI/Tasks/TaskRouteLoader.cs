@@ -67,6 +67,12 @@ namespace BotFarm.AI.Tasks
 
         [JsonPropertyName("testTimeoutSeconds")]
         public int TestTimeoutSeconds { get; set; } = 600;
+
+        [JsonPropertyName("restoreSnapshot")]
+        public string RestoreSnapshot { get; set; }
+
+        [JsonPropertyName("saveSnapshot")]
+        public string SaveSnapshot { get; set; }
     }
 
     public class ItemGrantData
@@ -220,6 +226,10 @@ namespace BotFarm.AI.Tasks
                     Z = data.StartPosition.Z
                 };
             }
+
+            // Parse snapshot settings
+            settings.RestoreSnapshot = data.RestoreSnapshot;
+            settings.SaveSnapshot = data.SaveSnapshot;
 
             return settings;
         }
