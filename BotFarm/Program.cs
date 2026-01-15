@@ -15,17 +15,33 @@ namespace BotFarm
         {
             Console.WriteLine("BotFarm starting...");
             Console.WriteLine($"Current directory: {Environment.CurrentDirectory}");
+
+            // Check for auto mode (legacy behavior - auto-spawn bots on startup)
+            bool autoMode = args.Contains("--auto") || args.Contains("-a");
+
             try
             {
                 Console.WriteLine("Creating BotFactory...");
                 Console.WriteLine("Flushing console...");
                 Console.Out.Flush();
-                
+
                 using (BotFactory factory = new BotFactory())
                 {
-                    Random random = new Random();
-                    Console.WriteLine($"Setting up factory with {Settings.Default.MinBotsCount}-{Settings.Default.MaxBotsCount} bots...");
-                    factory.SetupFactory(random.Next(Settings.Default.MinBotsCount, Settings.Default.MaxBotsCount));
+                    int botCount;
+                    if (autoMode)
+                    {
+                        Random random = new Random();
+                        botCount = random.Next(Settings.Default.MinBotsCount, Settings.Default.MaxBotsCount);
+                        Console.WriteLine($"AUTO MODE - spawning {botCount} bots...");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Ready. Use 'test run <routefile>' to start a test run");
+                        Console.WriteLine("Use --auto flag to auto-spawn bots on startup");
+                        botCount = 0;
+                    }
+
+                    factory.SetupFactory(botCount);
                     GC.KeepAlive(factory);
                 }
             }
