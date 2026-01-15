@@ -23,6 +23,56 @@ dotnet test "TrinityCore UnitTests/TrinityCore UnitTests.csproj"
 
 Note: The BotFarm UnitTests project uses .NET Framework 4.7.2 with MSTest and may require Visual Studio test runner.
 
+## Parallel Development with Git Worktrees
+
+**IMPORTANT**: Multiple workers may be working on this codebase simultaneously. Always use git worktrees for feature development to avoid conflicts.
+
+### Creating a Worktree
+
+```bash
+# From the repo root, create a worktree in a sibling directory
+git worktree add -b feat/your-feature-name ../BotFarm-yourfeature HEAD
+
+# Copy the lib/ folder (not tracked by git, contains native DLLs)
+cp -r BotFarm/lib/ ../BotFarm-yourfeature/BotFarm/
+```
+
+### Why Worktrees?
+
+- Multiple Claude instances or developers can work in parallel without conflicts
+- Each worktree has its own working directory but shares the git history
+- Changes can be tested independently before merging
+- The main directory stays stable for running tests
+
+### Workflow
+
+1. **Create worktree** for your feature branch
+2. **Copy `BotFarm/lib/`** folder (native dependencies not in git)
+3. **Make changes** in the worktree
+4. **Build and test** in the worktree
+5. **Merge back** to main when ready, or cherry-pick commits
+
+### Cleanup
+
+```bash
+# Remove a worktree when done
+git worktree remove ../BotFarm-yourfeature
+
+# Delete the feature branch if no longer needed
+git branch -d feat/your-feature-name
+```
+
+### Merging Changes Back
+
+If safe to merge (no conflicts expected):
+```bash
+# From main repo, merge the feature branch
+git merge feat/your-feature-name
+
+# Or cherry-pick specific commits
+git cherry-pick <commit-hash>
+```
+
 ## Required Dependencies
 
 Before running, copy these files to `BotFarm/lib/` from a TrinityCore CLI build (https://github.com/jackpoz/TrinityCore/tree/CLI):

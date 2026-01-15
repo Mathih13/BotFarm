@@ -28,6 +28,7 @@ namespace BotFarm
 
         List<BotGame> bots = new List<BotGame>();
         RemoteAccess remoteAccess;
+        DatabaseAccess databaseAccess;
         List<BotInfo> botInfos;
         const string botsInfosPath = "botsinfos.xml";
         const string logPath = "botfactory.log";
@@ -149,6 +150,26 @@ namespace BotFarm
                 else
                 {
                     Log("Remote Access connected successfully");
+                }
+                logger.Flush();
+
+                // Initialize MySQL database access for quest completion
+                try
+                {
+                    databaseAccess = new DatabaseAccess(
+                        Settings.Default.MySQLHost,
+                        Settings.Default.MySQLPort,
+                        Settings.Default.MySQLUser,
+                        Settings.Default.MySQLPassword,
+                        Settings.Default.MySQLCharactersDB
+                    );
+                    databaseAccess.Connect();
+                    Log("MySQL database connected for quest completion");
+                }
+                catch (Exception ex)
+                {
+                    Log($"MySQL connection failed (quest completion disabled): {ex.Message}");
+                    databaseAccess = null;
                 }
                 logger.Flush();
 
@@ -322,20 +343,19 @@ namespace BotFarm
                     }
                 }
 
-                // Complete prerequisite quests via SQL (RA doesn't support quest complete for offline chars)
-                if (completedQuests != null && completedQuests.Count > 0)
+            }
+
+            // Complete prerequisite quests via direct MySQL (RA doesn't support quest complete for offline chars)
+            if (completedQuests != null && completedQuests.Count > 0)
+            {
+                if (databaseAccess != null)
                 {
-                    foreach (var questId in completedQuests)
-                    {
-                        // Insert into character_queststatus_rewarded to mark quest as completed
-                        // This uses a subquery to get the character GUID from the name
-                        string sql = $"INSERT IGNORE INTO character_queststatus_rewarded (guid, quest, active) " +
-                                     $"SELECT guid, {questId}, 0 FROM characters WHERE name = '{characterName}'";
-                        string questCmd = $".server execute \"{sql}\"";
-                        Log($"RA: Completing quest {questId} for {characterName} via SQL");
-                        string response = remoteAccess.SendCommand(questCmd);
-                        Log($"RA quest response: {response}");
-                    }
+                    Log($"Completing {completedQuests.Count} quest(s) for {characterName} via MySQL");
+                    databaseAccess.CompleteQuestsForCharacter(characterName, completedQuests);
+                }
+                else
+                {
+                    Log($"Cannot complete quests for {characterName} - MySQL not connected", LogLevel.Warning);
                 }
             }
         }
@@ -780,6 +800,12 @@ namespace BotFarm
             {
                 remoteAccess.Dispose();
                 remoteAccess = null;
+            }
+
+            if (databaseAccess != null)
+            {
+                databaseAccess.Dispose();
+                databaseAccess = null;
             }
 
             SaveBotInfos();

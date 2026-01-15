@@ -227,5 +227,65 @@ namespace BotFarm.Properties {
                 this["CreateAccountOnly"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("localhost")]
+        public string MySQLHost {
+            get {
+                return ((string)(this["MySQLHost"]));
+            }
+            set {
+                this["MySQLHost"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("3306")]
+        public int MySQLPort {
+            get {
+                return ((int)(this["MySQLPort"]));
+            }
+            set {
+                this["MySQLPort"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("trinity")]
+        public string MySQLUser {
+            get {
+                return ((string)(this["MySQLUser"]));
+            }
+            set {
+                this["MySQLUser"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("trinity")]
+        public string MySQLPassword {
+            get {
+                return ((string)(this["MySQLPassword"]));
+            }
+            set {
+                this["MySQLPassword"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("characters")]
+        public string MySQLCharactersDB {
+            get {
+                return ((string)(this["MySQLCharactersDB"]));
+            }
+            set {
+                this["MySQLCharactersDB"] = value;
+            }
+        }
     }
 }
