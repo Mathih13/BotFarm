@@ -13,6 +13,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
+using Client.AI.Tasks;
+using BotFarm.Testing;
 
 namespace BotFarm
 {
@@ -26,6 +28,7 @@ namespace BotFarm
 
         List<BotGame> bots = new List<BotGame>();
         RemoteAccess remoteAccess;
+        DatabaseAccess databaseAccess;
         List<BotInfo> botInfos;
         const string botsInfosPath = "botsinfos.xml";
         const string logPath = "botfactory.log";
@@ -33,6 +36,9 @@ namespace BotFarm
         TextWriter logger;
         Random randomGenerator = new Random();
         Dictionary<string, BotBehaviorSettings> botBehaviors = new Dictionary<string, BotBehaviorSettings>();
+        TestRunCoordinator testCoordinator;
+        TestSuiteCoordinator suiteCoordinator;
+        SnapshotManager snapshotManager;
 
         public BotFactory()
         {
@@ -148,6 +154,50 @@ namespace BotFarm
                     Log("Remote Access connected successfully");
                 }
                 logger.Flush();
+
+                // Initialize MySQL database access for quest completion
+                try
+                {
+                    databaseAccess = new DatabaseAccess(
+                        Settings.Default.MySQLHost,
+                        Settings.Default.MySQLPort,
+                        Settings.Default.MySQLUser,
+                        Settings.Default.MySQLPassword,
+                        Settings.Default.MySQLCharactersDB
+                    );
+                    databaseAccess.Connect();
+                    Log("MySQL database connected for quest completion");
+                }
+                catch (Exception ex)
+                {
+                    Log($"MySQL connection failed (quest completion disabled): {ex.Message}");
+                    databaseAccess = null;
+                }
+                logger.Flush();
+
+                // Initialize snapshot manager (requires database)
+                snapshotManager = new SnapshotManager(databaseAccess);
+                if (databaseAccess != null)
+                {
+                    snapshotManager.EnsureTablesExist();
+                }
+
+                // Initialize test coordinator
+                testCoordinator = new TestRunCoordinator(this, snapshotManager);
+                testCoordinator.TestRunStarted += (s, run) => Log($"Test run started: {run.Id}");
+                testCoordinator.TestRunCompleted += (s, run) =>
+                {
+                    Log($"Test run completed: {run.Id} - Status: {run.Status}");
+                    Console.WriteLine(TestReportGenerator.GenerateConsoleReport(run));
+                };
+                testCoordinator.BotCompleted += (s, args) =>
+                    Log($"Bot {args.bot.BotName} completed: {(args.bot.Success ? "PASS" : "FAIL")}");
+
+                // Initialize test suite coordinator
+                suiteCoordinator = new TestSuiteCoordinator(this, testCoordinator);
+                suiteCoordinator.SuiteStarted += (s, suite) => Log($"Test suite started: {suite.Id} - {suite.SuiteName}");
+                suiteCoordinator.SuiteCompleted += (s, suite) =>
+                    Log($"Test suite completed: {suite.Id} - Status: {suite.Status} ({suite.TestsPassed}/{suite.TotalTests} passed)");
             }
             catch (Exception ex)
             {
@@ -232,6 +282,120 @@ namespace BotFarm
             return bots.FirstOrDefault(bot => bot.Player.GUID == obj.GUID) != null;
         }
 
+        /// <summary>
+        /// Create a bot for test harness with specific username and harness settings
+        /// Uses a fixed password for test accounts to allow reuse across runs
+        /// </summary>
+        public BotGame CreateTestBot(string username, HarnessSettings harness, int botIndex, bool startBot)
+        {
+            const string testPassword = "test1234";
+
+            Log($"Creating test bot: {username}");
+
+            // Create account via RA (will succeed if new, fail silently if exists)
+            if (remoteAccess != null)
+            {
+                lock (remoteAccess)
+                {
+                    string response = remoteAccess.SendCommand($".account create {username} {testPassword}");
+                    Log($"RA create account {username} response: {response}");
+                }
+            }
+            else
+            {
+                Log("RemoteAccess is null, cannot create account!", LogLevel.Warning);
+            }
+
+            BotGame game = new BotGame(Settings.Default.Hostname,
+                                       Settings.Default.Port,
+                                       username,
+                                       testPassword,
+                                       Settings.Default.RealmID,
+                                       0,
+                                       GetDefaultBehavior());
+
+            // Apply harness settings
+            game.SetHarnessSettings(harness, botIndex);
+
+            if (startBot)
+                game.Start();
+
+            return game;
+        }
+
+        /// <summary>
+        /// Set up a character via Remote Access commands (level, items, completed quests)
+        /// Character must be offline for these commands to work
+        /// </summary>
+        public void SetupCharacterViaRA(string characterName, int level, List<ItemGrant> items, List<uint> completedQuests = null)
+        {
+            if (remoteAccess == null)
+            {
+                Log("RemoteAccess is null, cannot setup character via RA", LogLevel.Warning);
+                return;
+            }
+
+            lock (remoteAccess)
+            {
+                // Set character level if > 1
+                if (level > 1)
+                {
+                    string levelCmd = $".character level {characterName} {level}";
+                    Log($"RA: Setting character {characterName} to level {level}");
+                    string response = remoteAccess.SendCommand(levelCmd);
+                    Log($"RA level response: {response}");
+                }
+
+                // Send items via mail (character must be offline)
+                if (items != null && items.Count > 0)
+                {
+                    foreach (var item in items)
+                    {
+                        string itemCmd = $".send items {characterName} \"Test Setup\" \"Items for testing\" {item.Entry}:{item.Count}";
+                        Log($"RA: Sending item {item.Entry}x{item.Count} to {characterName}");
+                        string response = remoteAccess.SendCommand(itemCmd);
+                        Log($"RA item response: {response}");
+                    }
+                }
+
+            }
+
+            // Complete prerequisite quests via direct MySQL (RA doesn't support quest complete for offline chars)
+            if (completedQuests != null && completedQuests.Count > 0)
+            {
+                if (databaseAccess != null)
+                {
+                    Log($"Completing {completedQuests.Count} quest(s) for {characterName} via MySQL");
+                    databaseAccess.CompleteQuestsForCharacter(characterName, completedQuests);
+                }
+                else
+                {
+                    Log($"Cannot complete quests for {characterName} - MySQL not connected", LogLevel.Warning);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Teleport a character to a specific position via Remote Access
+        /// Character must be online for this command to work
+        /// </summary>
+        public void TeleportCharacterViaRA(string characterName, uint mapId, float x, float y, float z)
+        {
+            if (remoteAccess == null)
+            {
+                Log("RemoteAccess is null, cannot teleport character via RA", LogLevel.Warning);
+                return;
+            }
+
+            lock (remoteAccess)
+            {
+                string teleportCmd = $".tele name {characterName} {mapId} {x} {y} {z}";
+                Log($"RA: Teleporting {characterName} to ({x}, {y}, {z}) on map {mapId}");
+                string response = remoteAccess.SendCommand(teleportCmd);
+                Log($"RA teleport response: {response}");
+            }
+        }
+
         public void SetupFactory(int botCount)
         {
             Log("Setting up bot factory with " + botCount + " bots");
@@ -296,6 +460,9 @@ namespace BotFarm
                         break;
                     case "route":
                         HandleRouteCommand(lineSplit);
+                        break;
+                    case "test":
+                        HandleTestCommand(lineSplit);
                         break;
                     case "help":
                         DisplayHelp();
@@ -409,6 +576,282 @@ namespace BotFarm
             }
         }
 
+        void HandleTestCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: test <command> [args...]");
+                Console.WriteLine("Commands:");
+                Console.WriteLine("  test run <routefile>           - Start a test run with harness settings");
+                Console.WriteLine("  test run-suite <suitefile> [--parallel] - Run a test suite");
+                Console.WriteLine("  test status [runId]            - Show status of test runs");
+                Console.WriteLine("  test suite-status [suiteId]    - Show status of suite runs");
+                Console.WriteLine("  test report <runId> [json]     - Generate report for a test run");
+                Console.WriteLine("  test list                      - List all test runs");
+                Console.WriteLine("  test suite-list                - List all suite runs");
+                Console.WriteLine("  test stop <runId>              - Stop a running test");
+                Console.WriteLine("  test suite-stop <suiteId>      - Stop a running suite");
+                return;
+            }
+
+            string command = args[1].ToLower();
+
+            switch (command)
+            {
+                case "run":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test run <routefile>");
+                        return;
+                    }
+                    string routePath = args[2];
+                    if (!System.IO.Path.IsPathRooted(routePath))
+                    {
+                        routePath = System.IO.Path.Combine("routes", routePath);
+                    }
+                    if (!File.Exists(routePath))
+                    {
+                        Console.WriteLine($"Route file not found: {routePath}");
+                        return;
+                    }
+
+                    // Start the test run asynchronously
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var run = await testCoordinator.StartTestRunAsync(routePath);
+                            Log($"Test run {run.Id} finished with status: {run.Status}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Test run failed: {ex.Message}", LogLevel.Error);
+                        }
+                    });
+                    Console.WriteLine($"Test run started for route: {routePath}");
+                    break;
+
+                case "status":
+                    if (args.Length >= 3)
+                    {
+                        // Show status for specific run
+                        var specificRun = testCoordinator.GetTestRun(args[2]);
+                        if (specificRun != null)
+                        {
+                            DisplayTestRunStatus(specificRun);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Test run '{args[2]}' not found");
+                        }
+                    }
+                    else
+                    {
+                        // Show all active runs
+                        var activeRuns = testCoordinator.ActiveRuns;
+                        if (activeRuns.Count == 0)
+                        {
+                            Console.WriteLine("No active test runs");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Active test runs: {activeRuns.Count}");
+                            foreach (var kvp in activeRuns)
+                            {
+                                DisplayTestRunStatus(kvp.Value);
+                            }
+                        }
+                    }
+                    break;
+
+                case "report":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test report <runId> [json]");
+                        return;
+                    }
+                    var runForReport = testCoordinator.GetTestRun(args[2]);
+                    if (runForReport == null)
+                    {
+                        Console.WriteLine($"Test run '{args[2]}' not found");
+                        return;
+                    }
+                    bool jsonFormat = args.Length > 3 && args[3].ToLower() == "json";
+                    if (jsonFormat)
+                    {
+                        Console.WriteLine(TestReportGenerator.GenerateJsonReport(runForReport));
+                    }
+                    else
+                    {
+                        Console.WriteLine(TestReportGenerator.GenerateConsoleReport(runForReport));
+                    }
+                    break;
+
+                case "list":
+                    Console.WriteLine("=== Active Test Runs ===");
+                    foreach (var kvp in testCoordinator.ActiveRuns)
+                    {
+                        Console.WriteLine($"  {kvp.Key}: {kvp.Value.RouteName ?? kvp.Value.RoutePath} - {kvp.Value.Status}");
+                    }
+                    Console.WriteLine("=== Completed Test Runs ===");
+                    foreach (var completedRun in testCoordinator.CompletedRuns)
+                    {
+                        string statusSymbol = completedRun.Status == TestRunStatus.Completed ? "[OK]" : "[X]";
+                        Console.WriteLine($"  {completedRun.Id}: {completedRun.RouteName ?? completedRun.RoutePath} - {statusSymbol} {completedRun.Status}");
+                    }
+                    break;
+
+                case "stop":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test stop <runId>");
+                        return;
+                    }
+                    if (testCoordinator.StopTestRun(args[2]))
+                    {
+                        Console.WriteLine($"Stopping test run {args[2]}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Test run '{args[2]}' not found or already completed");
+                    }
+                    break;
+
+                // ========== Test Suite Commands ==========
+                case "run-suite":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test run-suite <suitefile> [--parallel]");
+                        return;
+                    }
+                    string suitePath = args[2];
+                    if (!System.IO.Path.IsPathRooted(suitePath))
+                    {
+                        suitePath = System.IO.Path.Combine("routes", "suites", suitePath);
+                    }
+                    if (!File.Exists(suitePath))
+                    {
+                        // Try without suites subdirectory
+                        suitePath = System.IO.Path.Combine("routes", args[2]);
+                        if (!File.Exists(suitePath))
+                        {
+                            Console.WriteLine($"Suite file not found: {args[2]}");
+                            return;
+                        }
+                    }
+                    bool parallel = args.Length > 3 && args[3].ToLower() == "--parallel";
+
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var suite = await suiteCoordinator.StartSuiteRunAsync(suitePath, parallel);
+                            Log($"Test suite {suite.Id} finished with status: {suite.Status}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Test suite failed: {ex.Message}", LogLevel.Error);
+                        }
+                    });
+                    Console.WriteLine($"Test suite started: {suitePath}" + (parallel ? " (parallel mode)" : ""));
+                    break;
+
+                case "suite-status":
+                    if (args.Length >= 3)
+                    {
+                        var specificSuite = suiteCoordinator.GetSuiteRun(args[2]);
+                        if (specificSuite != null)
+                        {
+                            DisplaySuiteRunStatus(specificSuite);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Suite run '{args[2]}' not found");
+                        }
+                    }
+                    else
+                    {
+                        var activeSuites = suiteCoordinator.ActiveSuites;
+                        if (activeSuites.Count == 0)
+                        {
+                            Console.WriteLine("No active suite runs");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Active suite runs: {activeSuites.Count}");
+                            foreach (var kvp in activeSuites)
+                            {
+                                DisplaySuiteRunStatus(kvp.Value);
+                            }
+                        }
+                    }
+                    break;
+
+                case "suite-list":
+                    Console.WriteLine("=== Active Suite Runs ===");
+                    foreach (var kvp in suiteCoordinator.ActiveSuites)
+                    {
+                        Console.WriteLine($"  {kvp.Key}: {kvp.Value.SuiteName} - {kvp.Value.Status} ({kvp.Value.TestRuns.Count}/{kvp.Value.TotalTests} tests)");
+                    }
+                    Console.WriteLine("=== Completed Suite Runs ===");
+                    foreach (var completedSuite in suiteCoordinator.CompletedSuites)
+                    {
+                        string statusSymbol = completedSuite.Status == TestSuiteRunStatus.Completed ? "[OK]" : "[X]";
+                        Console.WriteLine($"  {completedSuite.Id}: {completedSuite.SuiteName} - {statusSymbol} {completedSuite.Status} ({completedSuite.TestsPassed}/{completedSuite.TotalTests} passed)");
+                    }
+                    break;
+
+                case "suite-stop":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: test suite-stop <suiteId>");
+                        return;
+                    }
+                    if (suiteCoordinator.StopSuiteRun(args[2]))
+                    {
+                        Console.WriteLine($"Stopping suite run {args[2]}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Suite run '{args[2]}' not found or already completed");
+                    }
+                    break;
+
+                default:
+                    Console.WriteLine($"Unknown test command: {command}");
+                    break;
+            }
+        }
+
+        void DisplaySuiteRunStatus(TestSuiteRun suite)
+        {
+            Console.WriteLine($"Suite Run: {suite.Id}");
+            Console.WriteLine($"  Name: {suite.SuiteName}");
+            Console.WriteLine($"  Status: {suite.Status}");
+            Console.WriteLine($"  Mode: {(suite.ParallelMode ? "Parallel" : "Sequential")}");
+            Console.WriteLine($"  Tests: {suite.TestRuns.Count}/{suite.TotalTests}");
+            Console.WriteLine($"  Passed: {suite.TestsPassed}, Failed: {suite.TestsFailed}, Skipped: {suite.TestsSkipped}");
+            Console.WriteLine($"  Duration: {suite.Duration.TotalSeconds:F1}s");
+        }
+
+        void DisplayTestRunStatus(TestRun run)
+        {
+            Console.WriteLine($"Test Run: {run.Id}");
+            Console.WriteLine($"  Route: {run.RouteName ?? run.RoutePath}");
+            Console.WriteLine($"  Status: {run.Status}");
+            Console.WriteLine($"  Duration: {FormatDuration(run.Duration)}");
+            Console.WriteLine($"  Bots: {run.BotsCompleted}/{run.BotResults.Count} completed, {run.BotsPassed} passed, {run.BotsFailed} failed");
+        }
+
+        static string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+                return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+            if (duration.TotalMinutes >= 1)
+                return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+            return $"{duration.Seconds}.{duration.Milliseconds / 100}s";
+        }
+
         BotGame FindBot(string botName)
         {
             var bot = bots.FirstOrDefault(b => b.Username.Equals(botName, StringComparison.InvariantCultureIgnoreCase));
@@ -422,6 +865,7 @@ namespace BotFarm
             Console.WriteLine("Available commands:");
             Console.WriteLine("  info / stats [bot]    - Display bot statistics");
             Console.WriteLine("  route <command>       - Manage bot task routes");
+            Console.WriteLine("  test <command>        - Run tests with harness settings");
             Console.WriteLine("  help                  - Show this help");
             Console.WriteLine("  quit / exit           - Shutdown BotFarm");
         }
@@ -488,6 +932,12 @@ namespace BotFarm
                 remoteAccess = null;
             }
 
+            if (databaseAccess != null)
+            {
+                databaseAccess.Dispose();
+                databaseAccess = null;
+            }
+
             SaveBotInfos();
 
             logger.Dispose();
@@ -535,6 +985,16 @@ namespace BotFarm
             {
                 return bots.Any(b => b.Player?.GUID == guid);
             }
+        }
+
+        /// <summary>
+        /// Get the default behavior settings
+        /// </summary>
+        public BotBehaviorSettings GetDefaultBehavior()
+        {
+            return botBehaviors.ContainsKey(defaultBehaviorName)
+                ? botBehaviors[defaultBehaviorName]
+                : botBehaviors.Values.First();
         }
 
         public void RemoveBot(BotGame bot)

@@ -75,5 +75,20 @@
     <Setting Name="CreateAccountOnly" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="MySQLHost" Type="System.String" Scope="User">
+      <Value Profile="(Default)">localhost</Value>
+    </Setting>
+    <Setting Name="MySQLPort" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">3306</Value>
+    </Setting>
+    <Setting Name="MySQLUser" Type="System.String" Scope="User">
+      <Value Profile="(Default)">trinity</Value>
+    </Setting>
+    <Setting Name="MySQLPassword" Type="System.String" Scope="User">
+      <Value Profile="(Default)">trinity</Value>
+    </Setting>
+    <Setting Name="MySQLCharactersDB" Type="System.String" Scope="User">
+      <Value Profile="(Default)">characters</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

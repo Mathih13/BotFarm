@@ -99,6 +99,11 @@ namespace BotFarm.AI.Tasks
         private const float StuckCheckIntervalSeconds = 5f;
         private const int MaxStuckCountBeforeUnstuck = 2;
 
+        // Combat stall detection - re-engage if no damage dealt
+        private int lastTargetHealth;
+        private DateTime lastHealthChangeTime;
+        private const float CombatStallTimeoutSeconds = 6f;
+
         // Total path failure tracking for logout
         private int totalPathFailures;
         private const int MaxTotalPathFailuresBeforeLogout = 20;
@@ -422,6 +427,11 @@ namespace BotFarm.AI.Tasks
                 state = KillMobsState.InCombat;
                 lastCombatUpdate = DateTime.Now;
                 consecutivePathFailures = 0;
+
+                // Initialize combat stall tracking
+                lastTargetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
+                lastHealthChangeTime = DateTime.Now;
+
                 return TaskResult.Running;
             }
             
@@ -474,11 +484,39 @@ namespace BotFarm.AI.Tasks
             }
 
             // Check if target is dead
-            var targetHealth = currentTarget[UnitField.UNIT_FIELD_HEALTH];
+            var targetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
             if (targetHealth == 0)
             {
                 OnTargetKilled(game);
                 return TaskResult.Running;
+            }
+
+            // Track target health changes for combat stall detection
+            if (targetHealth != lastTargetHealth)
+            {
+                lastTargetHealth = targetHealth;
+                lastHealthChangeTime = DateTime.Now;
+            }
+
+            // Check for combat stall - no damage dealt for too long
+            if ((DateTime.Now - lastHealthChangeTime).TotalSeconds > CombatStallTimeoutSeconds)
+            {
+                game.Log($"KillMobsTask: Combat stalled for {CombatStallTimeoutSeconds}s, re-engaging target", LogLevel.Warning);
+
+                // Stop all current actions
+                game.CancelActionsByFlag(ActionFlag.Movement);
+                game.StopAttack();
+
+                // Force re-pathfind to target
+                game.MoveTo(currentTarget.GetPosition());
+
+                // Restart attack
+                game.StartAttack(currentTarget.GUID);
+                combatAI.OnCombatStart(game, currentTarget);
+
+                // Reset stall tracking
+                lastHealthChangeTime = DateTime.Now;
+                lastTargetHealth = targetHealth;
             }
 
             // Refresh claim periodically to prevent timeout

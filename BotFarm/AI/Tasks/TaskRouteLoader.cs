@@ -13,24 +13,90 @@ namespace BotFarm.AI.Tasks
     {
         [JsonPropertyName("name")]
         public string Name { get; set; }
-        
+
         [JsonPropertyName("description")]
         public string Description { get; set; }
-        
+
         [JsonPropertyName("loop")]
         public bool Loop { get; set; }
-        
+
         [JsonPropertyName("tasks")]
         public List<TaskData> Tasks { get; set; }
+
+        [JsonPropertyName("harness")]
+        public HarnessData Harness { get; set; }
     }
-    
+
     public class TaskData
     {
         [JsonPropertyName("type")]
         public string Type { get; set; }
-        
+
         [JsonPropertyName("parameters")]
         public Dictionary<string, JsonElement> Parameters { get; set; }
+    }
+
+    public class HarnessData
+    {
+        [JsonPropertyName("botCount")]
+        public int BotCount { get; set; } = 1;
+
+        [JsonPropertyName("accountPrefix")]
+        public string AccountPrefix { get; set; } = "testbot_";
+
+        [JsonPropertyName("classes")]
+        public List<string> Classes { get; set; }
+
+        [JsonPropertyName("race")]
+        public string Race { get; set; } = "Human";
+
+        [JsonPropertyName("level")]
+        public int Level { get; set; } = 1;
+
+        [JsonPropertyName("items")]
+        public List<ItemGrantData> Items { get; set; }
+
+        [JsonPropertyName("completedQuests")]
+        public List<uint> CompletedQuests { get; set; }
+
+        [JsonPropertyName("startPosition")]
+        public StartPositionData StartPosition { get; set; }
+
+        [JsonPropertyName("setupTimeoutSeconds")]
+        public int SetupTimeoutSeconds { get; set; } = 120;
+
+        [JsonPropertyName("testTimeoutSeconds")]
+        public int TestTimeoutSeconds { get; set; } = 600;
+
+        [JsonPropertyName("restoreSnapshot")]
+        public string RestoreSnapshot { get; set; }
+
+        [JsonPropertyName("saveSnapshot")]
+        public string SaveSnapshot { get; set; }
+    }
+
+    public class ItemGrantData
+    {
+        [JsonPropertyName("entry")]
+        public uint Entry { get; set; }
+
+        [JsonPropertyName("count")]
+        public int Count { get; set; } = 1;
+    }
+
+    public class StartPositionData
+    {
+        [JsonPropertyName("mapId")]
+        public uint MapId { get; set; }
+
+        [JsonPropertyName("x")]
+        public float X { get; set; }
+
+        [JsonPropertyName("y")]
+        public float Y { get; set; }
+
+        [JsonPropertyName("z")]
+        public float Z { get; set; }
     }
     
     public static class TaskRouteLoader
@@ -81,6 +147,12 @@ namespace BotFarm.AI.Tasks
                 FilePath = routeFilePath
             };
 
+            // Parse harness settings if present
+            if (routeData.Harness != null)
+            {
+                route.Harness = BuildHarnessSettings(routeData.Harness);
+            }
+
             foreach (var taskData in routeData.Tasks)
             {
                 ITask task = CreateTask(taskData);
@@ -107,6 +179,59 @@ namespace BotFarm.AI.Tasks
             }
 
             return route;
+        }
+
+        private static HarnessSettings BuildHarnessSettings(HarnessData data)
+        {
+            var settings = new HarnessSettings
+            {
+                BotCount = data.BotCount,
+                AccountPrefix = data.AccountPrefix ?? "testbot_",
+                Race = data.Race ?? "Human",
+                Level = data.Level,
+                SetupTimeoutSeconds = data.SetupTimeoutSeconds,
+                TestTimeoutSeconds = data.TestTimeoutSeconds
+            };
+
+            // Parse classes
+            if (data.Classes != null && data.Classes.Count > 0)
+            {
+                settings.Classes = new List<string>(data.Classes);
+            }
+
+            // Parse items
+            if (data.Items != null)
+            {
+                settings.Items = new List<ItemGrant>();
+                foreach (var item in data.Items)
+                {
+                    settings.Items.Add(new ItemGrant { Entry = item.Entry, Count = item.Count });
+                }
+            }
+
+            // Parse completed quests
+            if (data.CompletedQuests != null && data.CompletedQuests.Count > 0)
+            {
+                settings.CompletedQuests = new List<uint>(data.CompletedQuests);
+            }
+
+            // Parse start position
+            if (data.StartPosition != null)
+            {
+                settings.StartPosition = new StartPosition
+                {
+                    MapId = data.StartPosition.MapId,
+                    X = data.StartPosition.X,
+                    Y = data.StartPosition.Y,
+                    Z = data.StartPosition.Z
+                };
+            }
+
+            // Parse snapshot settings
+            settings.RestoreSnapshot = data.RestoreSnapshot;
+            settings.SaveSnapshot = data.SaveSnapshot;
+
+            return settings;
         }
         
         private static ITask CreateTask(TaskData taskData)
@@ -255,6 +380,32 @@ namespace BotFarm.AI.Tasks
                             GetObjectUseRequirements(p, "objectRequirements"),
                             GetBool(p, "objectsGiveLoot", false),
                             GetBool(p, "defendSelf", true)
+                        );
+
+                    // Assertion tasks for test framework
+                    case "assertquestinlog":
+                        return new AssertQuestInLogTask(
+                            GetUInt(p, "questId"),
+                            GetString(p, "message", null)
+                        );
+
+                    case "assertquestnotinlog":
+                        return new AssertQuestNotInLogTask(
+                            GetUInt(p, "questId"),
+                            GetString(p, "message", null)
+                        );
+
+                    case "asserthasitem":
+                        return new AssertHasItemTask(
+                            GetUInt(p, "itemEntry"),
+                            GetInt(p, "minCount", 1),
+                            GetString(p, "message", null)
+                        );
+
+                    case "assertlevel":
+                        return new AssertLevelTask(
+                            GetUInt(p, "minLevel"),
+                            GetString(p, "message", null)
                         );
 
                     default:

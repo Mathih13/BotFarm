@@ -69,6 +69,11 @@ namespace BotFarm.AI.Tasks
         private AdventureState state;
         private bool movingToTarget;
 
+        // Combat stall detection - re-engage if no damage dealt
+        private int lastTargetHealth;
+        private DateTime lastHealthChangeTime;
+        private const float CombatStallTimeoutSeconds = 6f;
+
         // Object interaction state
         private WorldObject currentObjectTarget;
         private bool movingToObject;
@@ -111,14 +116,15 @@ namespace BotFarm.AI.Tasks
 
         private enum AdventureState
         {
-            Searching,        // Looking for a mob or object
-            MovingToTarget,   // Moving to engage mob
-            InCombat,         // Fighting
-            Resting,          // Recovering health/mana
-            Looting,          // Looting corpse after kill
-            MovingToObject,   // Moving to game object
-            UsingObject,      // Interacting with object
-            LootingObject     // Looting from object
+            Searching,          // Looking for a mob or object
+            MovingToTarget,     // Moving to engage mob
+            InCombat,           // Fighting
+            Resting,            // Recovering health/mana
+            Looting,            // Looting corpse after kill
+            MovingToObject,     // Moving to game object
+            UsingObject,        // Interacting with object
+            LootingObject,      // Looting from object
+            ReturningToCenter   // Moving back to center after getting stuck
         }
 
         public override string Name
@@ -314,6 +320,9 @@ namespace BotFarm.AI.Tasks
 
                 case AdventureState.LootingObject:
                     return HandleLootingObject(botGame);
+
+                case AdventureState.ReturningToCenter:
+                    return HandleReturningToCenter(botGame);
             }
 
             return TaskResult.Running;
@@ -363,6 +372,10 @@ namespace BotFarm.AI.Tasks
             combatAI.OnCombatStart(game, currentTarget);
             state = AdventureState.InCombat;
             lastCombatUpdate = DateTime.Now;
+
+            // Initialize combat stall tracking
+            lastTargetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
+            lastHealthChangeTime = DateTime.Now;
 
             return true;
         }
@@ -480,9 +493,16 @@ namespace BotFarm.AI.Tasks
 
             if (consecutivePathFailures >= MaxPathFailuresBeforeSkip)
             {
-                game.Log($"AdventureTask: Target unreachable, skipping", LogLevel.Warning);
+                game.Log($"AdventureTask: Target unreachable after {consecutivePathFailures} attempts, returning to center", LogLevel.Warning);
                 unpathableTargets.Add(currentTarget.GUID);
                 ReleaseCurrentTarget(game);
+
+                // Return to center position if available
+                if (centerPosition != null)
+                {
+                    state = AdventureState.ReturningToCenter;
+                    game.MoveTo(centerPosition);
+                }
                 return TaskResult.Running;
             }
 
@@ -504,6 +524,11 @@ namespace BotFarm.AI.Tasks
                 state = AdventureState.InCombat;
                 lastCombatUpdate = DateTime.Now;
                 consecutivePathFailures = 0;
+
+                // Initialize combat stall tracking
+                lastTargetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
+                lastHealthChangeTime = DateTime.Now;
+
                 return TaskResult.Running;
             }
 
@@ -550,11 +575,39 @@ namespace BotFarm.AI.Tasks
                 return TaskResult.Running;
             }
 
-            var targetHealth = currentTarget[UnitField.UNIT_FIELD_HEALTH];
+            var targetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
             if (targetHealth == 0)
             {
                 OnTargetKilled(game);
                 return TaskResult.Running;
+            }
+
+            // Track target health changes for combat stall detection
+            if (targetHealth != lastTargetHealth)
+            {
+                lastTargetHealth = targetHealth;
+                lastHealthChangeTime = DateTime.Now;
+            }
+
+            // Check for combat stall - no damage dealt for too long
+            if ((DateTime.Now - lastHealthChangeTime).TotalSeconds > CombatStallTimeoutSeconds)
+            {
+                game.Log($"AdventureTask: Combat stalled for {CombatStallTimeoutSeconds}s, re-engaging target", LogLevel.Warning);
+
+                // Stop all current actions
+                game.CancelActionsByFlag(ActionFlag.Movement);
+                game.StopAttack();
+
+                // Force re-pathfind to target
+                game.MoveTo(currentTarget.GetPosition());
+
+                // Restart attack
+                game.StartAttack(currentTarget.GUID);
+                combatAI.OnCombatStart(game, currentTarget);
+
+                // Reset stall tracking
+                lastHealthChangeTime = DateTime.Now;
+                lastTargetHealth = targetHealth;
             }
 
             // Refresh claim
@@ -709,9 +762,16 @@ namespace BotFarm.AI.Tasks
 
             if (consecutivePathFailures >= MaxPathFailuresBeforeSkip)
             {
-                game.Log($"AdventureTask: Object unreachable, skipping", LogLevel.Warning);
+                game.Log($"AdventureTask: Object unreachable after {consecutivePathFailures} attempts, returning to center", LogLevel.Warning);
                 unpathableTargets.Add(currentObjectTarget.GUID);
                 ReleaseCurrentObject(game);
+
+                // Return to center position if available
+                if (centerPosition != null)
+                {
+                    state = AdventureState.ReturningToCenter;
+                    game.MoveTo(centerPosition);
+                }
                 return TaskResult.Running;
             }
 
@@ -801,6 +861,34 @@ namespace BotFarm.AI.Tasks
                     OnObjectUsed(game);
                 }
                 return TaskResult.Running;
+            }
+
+            return TaskResult.Running;
+        }
+
+        private TaskResult HandleReturningToCenter(BotGame game)
+        {
+            // Check if we've reached the center
+            if (centerPosition == null)
+            {
+                state = AdventureState.Searching;
+                return TaskResult.Running;
+            }
+
+            float distance = (centerPosition - game.Player.GetPosition()).Length;
+            if (distance <= 5.0f)
+            {
+                game.Log("AdventureTask: Returned to center, resuming search", LogLevel.Info);
+                game.CancelActionsByFlag(ActionFlag.Movement);
+                state = AdventureState.Searching;
+                return TaskResult.Running;
+            }
+
+            // Keep moving to center
+            if ((DateTime.Now - lastMoveUpdate).TotalSeconds > 1.0)
+            {
+                game.MoveTo(centerPosition);
+                lastMoveUpdate = DateTime.Now;
             }
 
             return TaskResult.Running;
@@ -1211,6 +1299,21 @@ namespace BotFarm.AI.Tasks
             else if (killCount > 0)
             {
                 parts.Add($"kills: {killsCompleted}/{killCount}");
+            }
+
+            // Add item collection progress
+            if (collectItems != null && collectItems.Count > 0)
+            {
+                foreach (var req in collectItems)
+                {
+                    int collected = GetItemCount(game, req.ItemEntry);
+                    parts.Add($"item {req.ItemEntry}: {collected}/{req.Count}");
+                }
+            }
+            else if (collectItemEntry > 0 && collectItemCount > 0)
+            {
+                int collected = GetItemCount(game, collectItemEntry);
+                parts.Add($"item {collectItemEntry}: {collected}/{collectItemCount}");
             }
 
             game.Log($"AdventureTask: Killed entry {killedEntry} - Progress: {string.Join(", ", parts)}", LogLevel.Info);

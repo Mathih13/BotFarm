@@ -11,11 +11,24 @@ namespace Client.AI.Tasks
         private int currentTaskIndex = -1;
         private ITask currentTask = null;
         private bool isActive = false;
-        
+
+        // Event system for test framework
+        public event EventHandler<TaskCompletedEventArgs> TaskCompleted;
+        public event EventHandler<RouteCompletedEventArgs> RouteCompleted;
+
+        // Timing tracking
+        private DateTime routeStartTime;
+        private DateTime taskStartTime;
+        private List<TaskCompletedEventArgs> taskResults = new List<TaskCompletedEventArgs>();
+        private int tasksCompleted = 0;
+        private int tasksFailed = 0;
+        private int tasksSkipped = 0;
+
         public TaskRoute Route => route;
         public int CurrentTaskIndex => currentTaskIndex;
         public ITask CurrentTask => currentTask;
         public bool IsComplete => currentTaskIndex >= route.Tasks.Count && !route.Loop;
+        public IReadOnlyList<TaskCompletedEventArgs> TaskResults => taskResults;
         
         public TaskExecutorAI(TaskRoute route)
         {
@@ -26,13 +39,19 @@ namespace Client.AI.Tasks
         {
             this.game = game;
             isActive = true;
-            
+            routeStartTime = DateTime.UtcNow;
+            taskResults.Clear();
+            tasksCompleted = 0;
+            tasksFailed = 0;
+            tasksSkipped = 0;
+
             if (route.Tasks.Count == 0)
             {
                 game.Log($"TaskExecutorAI: Route '{route.Name}' has no tasks", LogLevel.Warning);
+                FireRouteCompleted(true, null);
                 return false;
             }
-            
+
             game.Log($"TaskExecutorAI: Starting route '{route.Name}' with {route.Tasks.Count} tasks", LogLevel.Info);
             StartNextTask();
             return true;
@@ -42,23 +61,27 @@ namespace Client.AI.Tasks
         {
             if (!isActive || currentTask == null)
                 return;
-            
+
             try
             {
                 var result = currentTask.Update(game);
-                
+
                 switch (result)
                 {
                     case TaskResult.Success:
                         game.Log($"TaskExecutorAI: Task '{currentTask.Name}' completed successfully", LogLevel.Info);
+                        FireTaskCompleted(currentTask, TaskResult.Success, null);
+                        tasksCompleted++;
                         currentTask.Cleanup(game);
                         StartNextTask();
                         break;
-                        
+
                     case TaskResult.Failed:
                         game.Log($"TaskExecutorAI: Task '{currentTask.Name}' failed", LogLevel.Error);
+                        FireTaskCompleted(currentTask, TaskResult.Failed, "Task failed");
+                        tasksFailed++;
                         currentTask.Cleanup(game);
-                        
+
                         if (route.Loop)
                         {
                             game.Log($"TaskExecutorAI: Route is looped, restarting from beginning", LogLevel.Info);
@@ -69,15 +92,18 @@ namespace Client.AI.Tasks
                         {
                             isActive = false;
                             game.Log($"TaskExecutorAI: Route '{route.Name}' failed", LogLevel.Error);
+                            FireRouteCompleted(false, $"Task '{currentTask.Name}' failed");
                         }
                         break;
-                        
+
                     case TaskResult.Skipped:
                         game.Log($"TaskExecutorAI: Task '{currentTask.Name}' was skipped", LogLevel.Info);
+                        FireTaskCompleted(currentTask, TaskResult.Skipped, null);
+                        tasksSkipped++;
                         currentTask.Cleanup(game);
                         StartNextTask();
                         break;
-                        
+
                     case TaskResult.Running:
                         // Continue running
                         break;
@@ -86,15 +112,18 @@ namespace Client.AI.Tasks
             catch (Exception ex)
             {
                 game.LogException($"TaskExecutorAI: Exception in task '{currentTask.Name}': {ex.Message}");
+                FireTaskCompleted(currentTask, TaskResult.Failed, ex.Message);
+                tasksFailed++;
                 currentTask?.Cleanup(game);
                 isActive = false;
+                FireRouteCompleted(false, $"Exception in task '{currentTask?.Name}': {ex.Message}");
             }
         }
         
         private void StartNextTask()
         {
             currentTaskIndex++;
-            
+
             // Check if route is complete
             if (currentTaskIndex >= route.Tasks.Count)
             {
@@ -108,18 +137,22 @@ namespace Client.AI.Tasks
                     game.Log($"TaskExecutorAI: Route '{route.Name}' completed successfully", LogLevel.Info);
                     currentTask = null;
                     isActive = false;
+                    FireRouteCompleted(true, null);
                     return;
                 }
             }
-            
+
             currentTask = route.Tasks[currentTaskIndex];
+            taskStartTime = DateTime.UtcNow;
             game.Log($"TaskExecutorAI: Starting task {currentTaskIndex + 1}/{route.Tasks.Count}: '{currentTask.Name}'", LogLevel.Info);
-            
+
             if (!currentTask.Start(game))
             {
                 game.Log($"TaskExecutorAI: Task '{currentTask.Name}' failed to start", LogLevel.Error);
+                FireTaskCompleted(currentTask, TaskResult.Failed, "Failed to start");
+                tasksFailed++;
                 currentTask.Cleanup(game);
-                
+
                 if (route.Loop)
                 {
                     currentTaskIndex = -1;
@@ -128,6 +161,7 @@ namespace Client.AI.Tasks
                 else
                 {
                     isActive = false;
+                    FireRouteCompleted(false, $"Task '{currentTask.Name}' failed to start");
                 }
             }
         }
@@ -154,6 +188,37 @@ namespace Client.AI.Tasks
         public bool AllowPause()
         {
             return true;
+        }
+
+        private void FireTaskCompleted(ITask task, TaskResult result, string errorMessage)
+        {
+            var duration = DateTime.UtcNow - taskStartTime;
+            var eventArgs = new TaskCompletedEventArgs(
+                task,
+                result,
+                duration,
+                currentTaskIndex,
+                route.Tasks.Count,
+                errorMessage
+            );
+            taskResults.Add(eventArgs);
+            TaskCompleted?.Invoke(this, eventArgs);
+        }
+
+        private void FireRouteCompleted(bool success, string errorMessage)
+        {
+            var totalDuration = DateTime.UtcNow - routeStartTime;
+            var eventArgs = new RouteCompletedEventArgs(
+                route,
+                success,
+                tasksCompleted,
+                tasksFailed,
+                tasksSkipped,
+                totalDuration,
+                new List<TaskCompletedEventArgs>(taskResults),
+                errorMessage
+            );
+            RouteCompleted?.Invoke(this, eventArgs);
         }
     }
 }

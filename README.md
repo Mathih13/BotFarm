@@ -13,6 +13,7 @@ A bot farm application for spawning multiple automated World of Warcraft players
 - **Multi-Bot Coordination** - Bots coordinate to avoid targeting the same mobs
 - **Auto Account Creation** - Automatically creates accounts via Remote Access
 - **Quest Support** - Accept quests, kill mobs, collect items, turn in quests
+- **Test Framework** - E2E testing with harness configuration and assertion tasks
 
 ## Quick Start
 
@@ -85,7 +86,12 @@ Edit `BotFarm.dll.config` in the output folder:
 
 ```bash
 cd BotFarm/bin/x64/Release/net8.0
+
+# Test mode (default) - no auto-spawn, use test commands
 ./BotFarm.exe
+
+# Auto-spawn mode (legacy behavior)
+./BotFarm.exe --auto
 ```
 
 ## Task System
@@ -122,6 +128,10 @@ Bots follow JSON-defined routes that specify a sequence of tasks. Routes are loa
 | `SellItems` | Sell to vendor | `npcEntry` |
 | `Wait` | Wait for seconds | `seconds` |
 | `LogMessage` | Log a message | `message`, `level` |
+| `AssertQuestInLog` | Verify quest is in log | `questId`, `message` |
+| `AssertQuestNotInLog` | Verify quest is NOT in log | `questId`, `message` |
+| `AssertHasItem` | Verify player has item | `itemEntry`, `minCount`, `message` |
+| `AssertLevel` | Verify player level | `minLevel`, `message` |
 
 ### Example: Kill Quest Route
 
@@ -179,6 +189,44 @@ Some tasks support class-specific NPCs or quests:
 ```
 
 **Supported classes**: Warrior, Paladin, Hunter, Rogue, Priest, DeathKnight, Shaman, Mage, Warlock, Druid
+
+## Test Framework
+
+The test framework enables automated E2E testing of bot behaviors. Routes can define their own bot requirements using a `harness` section.
+
+### Test Route with Harness
+
+```json
+{
+  "name": "First Quest Test",
+  "harness": {
+    "botCount": 1,
+    "accountPrefix": "test_ns_",
+    "classes": ["Warrior"],
+    "race": "Human",
+    "level": 1,
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 90
+  },
+  "tasks": [
+    { "type": "AcceptQuest", "parameters": { "npcEntry": 823, "questId": 783 } },
+    { "type": "AssertQuestInLog", "parameters": { "questId": 783 } },
+    { "type": "TurnInQuest", "parameters": { "npcEntry": 197, "questId": 783 } },
+    { "type": "AssertQuestNotInLog", "parameters": { "questId": 783 } }
+  ]
+}
+```
+
+### Test Commands
+
+| Command | Description |
+|---------|-------------|
+| `test run <route>` | Start a test run with harness |
+| `test status [runId]` | Show test run status |
+| `test list` | List all test runs |
+| `test stop <runId>` | Stop a running test |
+
+See [docs/TEST_FRAMEWORK_PLAN.md](docs/TEST_FRAMEWORK_PLAN.md) for full documentation.
 
 ## Console Commands
 

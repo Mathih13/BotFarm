@@ -1,0 +1,110 @@
+{
+  "name": "Northshire - Class Trainer Quest",
+  "description": "Tests class-specific quest chain - different trainers per class",
+  "harness": {
+    "botCount": 2,
+    "accountPrefix": "test_ns3_",
+    "classes": [ "Warrior", "Priest" ],
+    "race": "Human",
+    "level": 1,
+    "items": [],
+    "completedQuests": [ 783 ],
+   
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 120
+  },
+  "loop": false,
+  "tasks": [
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Starting class trainer quest test",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "classQuests": {
+          "Warrior": 3100,
+          "Priest": 3103,
+          "Paladin": 3101
+        }
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Class quest accepted, moving to trainer",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8897.578,
+        "y": -173.6554,
+        "z": 81.578026,
+        "mapId": 0,
+        "threshold": 5.0
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "threshold": 4.0,
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "classQuests": {
+          "Warrior": 3100,
+          "Priest": 3103,
+          "Paladin": 3101
+        },
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Class trainer quest complete",
+        "level": "Info"
+      }
+    }
+  ]
+}

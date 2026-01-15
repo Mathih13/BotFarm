@@ -205,6 +205,29 @@ namespace Client
         public uint PendingQuestRewardChoiceCount { get; protected set; }
 
         /// <summary>
+        /// Checks if a quest is currently in the player's quest log.
+        /// </summary>
+        /// <param name="questId">The quest ID to check for</param>
+        /// <returns>True if the quest is in the log, false otherwise</returns>
+        public bool IsQuestInLog(uint questId)
+        {
+            if (Player == null || questId == 0)
+                return false;
+
+            // Quest log has 25 slots, each slot is 5 fields apart
+            // PLAYER_QUEST_LOG_X_1 contains the quest ID
+            int baseField = (int)PlayerField.PLAYER_QUEST_LOG_1_1;
+            for (int slot = 0; slot < 25; slot++)
+            {
+                int fieldIndex = baseField + (slot * 5);
+                uint slotQuestId = Player[fieldIndex];
+                if (slotQuestId == questId)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Current loot window state - tracks what's in the loot window when open
         /// </summary>
         public LootWindowState CurrentLoot { get; protected set; } = new LootWindowState();
@@ -501,13 +524,41 @@ namespace Client
         {
             Log("Creating new character");
             OutPacket createCharacterPacket = new OutPacket(WorldCommand.CMSG_CHAR_CREATE);
-            StringBuilder charName = new StringBuilder("Bot");
-            foreach (char c in Username.Substring(3).Take(9))
-	        {
-                charName.Append((char)(97 + int.Parse(c.ToString())));
-	        }
+            StringBuilder charName = new StringBuilder();
 
-            // Ensure Name rules are applied
+            // Generate character name from username - convert digits to unique letter sequences
+            // Use different offsets for each digit position to avoid collisions
+            int digitPosition = 0;
+            foreach (char c in Username)
+            {
+                if (char.IsLetter(c))
+                    charName.Append(c);
+                else if (char.IsDigit(c))
+                {
+                    // Use position-based offset to make digit sequences unique
+                    // e.g., "11" becomes "bm" not "bb", "12" becomes "bn" not "bc"
+                    int baseOffset = (c - '0');
+                    int positionOffset = (digitPosition * 11) % 26; // Prime multiplier for variety
+                    charName.Append((char)('a' + ((baseOffset + positionOffset) % 26)));
+                    digitPosition++;
+                }
+                if (charName.Length >= 12)
+                    break;
+            }
+
+            // If too short, generate a fallback name
+            if (charName.Length < 2)
+            {
+                charName.Clear();
+                charName.Append("Botchar");
+            }
+
+            // Ensure name starts with uppercase and rest lowercase (WoW naming rules)
+            charName[0] = char.ToUpper(charName[0]);
+            for (int i = 1; i < charName.Length; i++)
+                charName[i] = char.ToLower(charName[i]);
+
+            // Ensure no consecutive duplicate characters (WoW naming rules)
             char previousChar = '\0';
             for (int i = 0; i < charName.Length; i++ )
             {

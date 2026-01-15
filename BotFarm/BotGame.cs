@@ -38,6 +38,25 @@ namespace BotFarm
         // Track if we've already created a fresh character this session
         private bool hasCreatedFreshCharacter = false;
 
+        // Skip character creation/deletion - use existing character (for Phase 2 of test runs)
+        private bool skipCharacterCreation = false;
+
+        // Harness settings for test framework
+        private HarnessSettings harnessSettings = null;
+        private string assignedClass = null;
+        private Race assignedRace = Race.Human;
+        private int harnessIndex = 0;
+
+        /// <summary>
+        /// The harness settings assigned to this bot, if any
+        /// </summary>
+        public HarnessSettings HarnessSettings => harnessSettings;
+
+        /// <summary>
+        /// The index of this bot within the harness (0-based)
+        /// </summary>
+        public int HarnessIndex => harnessIndex;
+
         /// <summary>
         /// Indicates whether the last MoveTo call succeeded in finding a path.
         /// Use this to detect unreachable targets.
@@ -234,6 +253,14 @@ namespace BotFarm
                 return;
             }
 
+            // If skipCharacterCreation is set (Phase 2 of test run), just log in with existing character
+            if (skipCharacterCreation && characterList.Length > 0)
+            {
+                Log($"Using existing character (Phase 2): {characterList[0].Name}");
+                base.PresentCharacterList(characterList);
+                return;
+            }
+
             // Delete all existing characters before creating a new one
             Log($"Found {characterList.Length} existing character(s), deleting all to create fresh");
 
@@ -258,23 +285,88 @@ namespace BotFarm
             CreateRandomCharacter();
         }
 
+        /// <summary>
+        /// Set harness settings for this bot (used by test framework)
+        /// </summary>
+        /// <param name="settings">The harness settings from the route</param>
+        /// <param name="botIndex">The index of this bot within the harness (0-based)</param>
+        public void SetHarnessSettings(HarnessSettings settings, int botIndex)
+        {
+            this.harnessSettings = settings;
+            this.harnessIndex = botIndex;
+
+            if (settings.Classes != null && settings.Classes.Count > 0)
+            {
+                this.assignedClass = settings.Classes[botIndex % settings.Classes.Count];
+            }
+            else
+            {
+                this.assignedClass = "Warrior";
+            }
+
+            if (!string.IsNullOrEmpty(settings.Race))
+            {
+                if (Enum.TryParse<Race>(settings.Race, true, out var race))
+                {
+                    this.assignedRace = race;
+                }
+            }
+
+            Log($"Harness settings applied: Class={assignedClass}, Race={assignedRace}, Index={botIndex}");
+        }
+
+        /// <summary>
+        /// Set to true to skip character deletion/creation and just log in with existing character.
+        /// Used for Phase 2 of test runs after character setup via RA.
+        /// </summary>
+        public void SetSkipCharacterCreation(bool skip)
+        {
+            this.skipCharacterCreation = skip;
+            if (skip)
+            {
+                Log("Skip character creation enabled - will use existing character");
+            }
+        }
+
         private void CreateRandomCharacter()
         {
-            // Round-robin distribution among available classes
             Class classChoice;
-            lock (classDistributionLock)
+            Race raceChoice;
+
+            // Use harness settings if available
+            if (harnessSettings != null && !string.IsNullOrEmpty(assignedClass))
             {
-                classChoice = availableClasses[classDistributionCounter % availableClasses.Length];
-                classDistributionCounter++;
+                if (Enum.TryParse<Class>(assignedClass, true, out classChoice))
+                {
+                    raceChoice = assignedRace;
+                    Log($"Creating new {classChoice} character (race: {raceChoice}) from harness settings");
+                }
+                else
+                {
+                    Log($"Invalid class in harness settings: {assignedClass}, falling back to default", LogLevel.Warning);
+                    classChoice = Class.Warrior;
+                    raceChoice = Race.Human;
+                }
             }
-            Log($"Creating new {classChoice} character");
+            else
+            {
+                // Round-robin distribution among available classes (default behavior)
+                lock (classDistributionLock)
+                {
+                    classChoice = availableClasses[classDistributionCounter % availableClasses.Length];
+                    classDistributionCounter++;
+                }
+                raceChoice = Race.Human;
+                Log($"Creating new {classChoice} character");
+            }
+
             hasCreatedFreshCharacter = true;
-            CreateCharacter(Race.Human, classChoice);
+            CreateCharacter(raceChoice, classChoice);
         }
 
         public override void CharacterCreationFailed(CommandDetail result)
         {
-#warning ToDo: create a character with a different name
+            // Note: Name collisions are now mitigated by position-based digit encoding in CreateCharacter()
             Log($"Bot {Username} failed creating a character with error {result.ToString()}", LogLevel.Error);
         }
 
@@ -601,6 +693,14 @@ namespace BotFarm
         public void ResumeRoute()
         {
             currentRouteExecutor?.Resume();
+        }
+
+        /// <summary>
+        /// Get the current route executor (for subscribing to events)
+        /// </summary>
+        public TaskExecutorAI GetRouteExecutor()
+        {
+            return currentRouteExecutor;
         }
 
         public string GetRouteStatus()
