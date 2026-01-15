@@ -25,7 +25,7 @@ namespace BotFarm
         }
 
         List<BotGame> bots = new List<BotGame>();
-        AutomatedGame factoryGame;
+        RemoteAccess remoteAccess;
         List<BotInfo> botInfos;
         const string botsInfosPath = "botsinfos.xml";
         const string logPath = "botfactory.log";
@@ -38,8 +38,18 @@ namespace BotFarm
         {
             Instance = this;
 
-            logger = TextWriter.Synchronized(new StreamWriter(logPath));
+            try
+            {
+                logger = TextWriter.Synchronized(new StreamWriter(logPath));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to create log file: {ex.Message}");
+                throw;
+            }
+            
             logger.WriteLine("Starting BotFactory");
+            logger.Flush();
 
             if (!File.Exists(botsInfosPath))
                 botInfos = new List<BotInfo>();
@@ -94,29 +104,87 @@ namespace BotFarm
                 }
             }
 
-            DetourCLI.Detour.Initialize(Settings.Default.MMAPsFolderPath);
-            VMapCLI.VMap.Initialize(Settings.Default.VMAPsFolderPath);
-            MapCLI.Map.Initialize(Settings.Default.MAPsFolderPath);
-            DBCStoresCLI.DBCStores.Initialize(Settings.Default.DBCsFolderPath);
-            DBCStoresCLI.DBCStores.LoadDBCs();
+            try
+            {
+                // Trim paths to remove any leading/trailing whitespace from App.config
+                string mmapsPath = Settings.Default.MMAPsFolderPath?.Trim();
+                string vmapsPath = Settings.Default.VMAPsFolderPath?.Trim();
+                string mapsPath = Settings.Default.MAPsFolderPath?.Trim();
+                string dbcsPath = Settings.Default.DBCsFolderPath?.Trim();
 
-            factoryGame = new AutomatedGame(Settings.Default.Hostname,
-                                            Settings.Default.Port,
-                                            Settings.Default.Username,
-                                            Settings.Default.Password,
-                                            Settings.Default.RealmID,
-                                            0);
-            factoryGame.Start();
+                Log("Initializing Detour with path: " + mmapsPath);
+                logger.Flush();
+                DetourCLI.Detour.Initialize(mmapsPath);
+
+                Log("Initializing VMap with path: " + vmapsPath);
+                logger.Flush();
+                VMapCLI.VMap.Initialize(vmapsPath);
+
+                Log("Initializing Map with path: " + mapsPath);
+                logger.Flush();
+                MapCLI.Map.Initialize(mapsPath);
+                
+                Log("Initializing DBCStores with path: " + dbcsPath);
+                logger.Flush();
+                DBCStoresCLI.DBCStores.Initialize(dbcsPath);
+                
+                Log("Loading DBCs");
+                logger.Flush();
+                DBCStoresCLI.DBCStores.LoadDBCs();
+                
+                Log("All initializations complete");
+                logger.Flush();
+                
+                // Initialize RemoteAccess connection once for all bots
+                Log("Connecting to Remote Access for account creation");
+                remoteAccess = new RemoteAccess(Settings.Default.Hostname, Settings.Default.RAPort, 
+                                                 Settings.Default.Username, Settings.Default.Password);
+                if (!remoteAccess.Connect())
+                {
+                    Log("Failed to connect to Remote Access - account creation will fail!");
+                }
+                else
+                {
+                    Log("Remote Access connected successfully");
+                }
+                logger.Flush();
+            }
+            catch (Exception ex)
+            {
+                Log("Failed during CLI initialization: " + ex.GetType().Name + " - " + ex.Message);
+                if (ex.InnerException != null)
+                    Log("Inner exception: " + ex.InnerException.Message);
+                logger.Flush();
+                throw;
+            }
         }
 
         public BotGame CreateBot(bool startBot)
         {
             Log("Creating new bot");
+            Console.WriteLine("CreateBot: Starting account creation via RA");
 
             string username = "BOT" + randomGenerator.Next();
             string password = randomGenerator.Next().ToString();
-            lock(factoryGame)
-                factoryGame.DoSayChat(".account create " + username + " " + password);
+            
+            Console.WriteLine($"CreateBot: Generated username={username}, password={password}");
+            
+            // Use the shared RemoteAccess connection with locking for thread safety
+            if (remoteAccess != null)
+            {
+                lock (remoteAccess)
+                {
+                    Console.WriteLine($"CreateBot: Sending create account command for {username}");
+                    string response = remoteAccess.SendCommand($".account create {username} {password}");
+                    Log($"RA create account {username} response: {response}");
+                    Console.WriteLine($"CreateBot: RA response: {response}");
+                }
+            }
+            else
+            {
+                Log("RemoteAccess is null, cannot create account!");
+                Console.WriteLine("CreateBot: RemoteAccess is null!");
+            }
 
             uint behaviorRandomIndex = (uint)randomGenerator.Next(100);
             uint behaviorCurrentIndex = 0;
@@ -161,19 +229,11 @@ namespace BotFarm
 
         public bool IsBot(WorldObject obj)
         {
-            if (factoryGame.Player.GUID == obj.GUID)
-                return true;
             return bots.FirstOrDefault(bot => bot.Player.GUID == obj.GUID) != null;
         }
 
         public void SetupFactory(int botCount)
         {
-            while(!factoryGame.LoggedIn)
-            {
-                 Log("Waiting for BotFactory account to login");
-                 Thread.Sleep(1000);
-            }
-
             Log("Setting up bot factory with " + botCount + " bots");
             Stopwatch watch = new Stopwatch();
             watch.Start();
@@ -234,8 +294,136 @@ namespace BotFarm
                     case "statistics":
                         DisplayStatistics(lineSplit.Length > 1 ? lineSplit[1] : "");
                         break;
+                    case "route":
+                        HandleRouteCommand(lineSplit);
+                        break;
+                    case "help":
+                        DisplayHelp();
+                        break;
                 }
             }
+        }
+
+        void HandleRouteCommand(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Usage: route <command> [bot] [args...]");
+                Console.WriteLine("Commands:");
+                Console.WriteLine("  route start <bot> <routefile> - Start a route for a specific bot");
+                Console.WriteLine("  route stop <bot>              - Stop current route for a bot");
+                Console.WriteLine("  route status [bot]            - Show route status (all bots or specific)");
+                Console.WriteLine("  route startall <routefile>    - Start route for all bots");
+                Console.WriteLine("  route stopall                 - Stop routes for all bots");
+                return;
+            }
+
+            string command = args[1].ToLower();
+
+            switch (command)
+            {
+                case "start":
+                    if (args.Length < 4)
+                    {
+                        Console.WriteLine("Usage: route start <bot> <routefile>");
+                        return;
+                    }
+                    var botToStart = FindBot(args[2]);
+                    if (botToStart != null)
+                    {
+                        string routePath = args[3];
+                        if (!System.IO.Path.IsPathRooted(routePath))
+                        {
+                            routePath = System.IO.Path.Combine("routes", routePath);
+                        }
+                        if (botToStart.LoadAndStartRoute(routePath))
+                            Console.WriteLine($"Started route for bot {botToStart.Username}");
+                        else
+                            Console.WriteLine($"Failed to start route for bot {botToStart.Username}");
+                    }
+                    break;
+
+                case "stop":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: route stop <bot>");
+                        return;
+                    }
+                    var botToStop = FindBot(args[2]);
+                    if (botToStop != null)
+                    {
+                        botToStop.StopRoute();
+                        Console.WriteLine($"Stopped route for bot {botToStop.Username}");
+                    }
+                    break;
+
+                case "status":
+                    if (args.Length >= 3)
+                    {
+                        var botForStatus = FindBot(args[2]);
+                        if (botForStatus != null)
+                        {
+                            Console.WriteLine($"{botForStatus.Username}: {botForStatus.GetRouteStatus()}");
+                        }
+                    }
+                    else
+                    {
+                        foreach (var bot in bots)
+                        {
+                            Console.WriteLine($"{bot.Username}: {bot.GetRouteStatus()}");
+                        }
+                    }
+                    break;
+
+                case "startall":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("Usage: route startall <routefile>");
+                        return;
+                    }
+                    string routePathAll = args[2];
+                    if (!System.IO.Path.IsPathRooted(routePathAll))
+                    {
+                        routePathAll = System.IO.Path.Combine("routes", routePathAll);
+                    }
+                    int startedCount = 0;
+                    foreach (var bot in bots)
+                    {
+                        if (bot.LoadAndStartRoute(routePathAll))
+                            startedCount++;
+                    }
+                    Console.WriteLine($"Started route for {startedCount}/{bots.Count} bots");
+                    break;
+
+                case "stopall":
+                    foreach (var bot in bots)
+                    {
+                        bot.StopRoute();
+                    }
+                    Console.WriteLine($"Stopped routes for all {bots.Count} bots");
+                    break;
+
+                default:
+                    Console.WriteLine($"Unknown route command: {command}");
+                    break;
+            }
+        }
+
+        BotGame FindBot(string botName)
+        {
+            var bot = bots.FirstOrDefault(b => b.Username.Equals(botName, StringComparison.InvariantCultureIgnoreCase));
+            if (bot == null)
+                Console.WriteLine($"Bot with username '{botName}' not found");
+            return bot;
+        }
+
+        void DisplayHelp()
+        {
+            Console.WriteLine("Available commands:");
+            Console.WriteLine("  info / stats [bot]    - Display bot statistics");
+            Console.WriteLine("  route <command>       - Manage bot task routes");
+            Console.WriteLine("  help                  - Show this help");
+            Console.WriteLine("  quit / exit           - Shutdown BotFarm");
         }
 
         void DisplayStatistics(string botname)
@@ -294,7 +482,11 @@ namespace BotFarm
 
             Task.WaitAll(botsDisposing.ToArray(), new TimeSpan(0, 2, 0));
 
-            factoryGame.DisposeAsync().AsTask().Wait();
+            if (remoteAccess != null)
+            {
+                remoteAccess.Dispose();
+                remoteAccess = null;
+            }
 
             SaveBotInfos();
 
@@ -331,6 +523,17 @@ namespace BotFarm
             }
             catch
             {
+            }
+        }
+
+        /// <summary>
+        /// Check if a GUID belongs to a bot player
+        /// </summary>
+        public bool IsBot(ulong guid)
+        {
+            lock (bots)
+            {
+                return bots.Any(b => b.Player?.GUID == guid);
             }
         }
 

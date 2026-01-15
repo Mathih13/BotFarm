@@ -18,5 +18,6 @@ namespace BotFarm
         public bool Begger;
         public bool FollowGroupLeader;
         public bool Explorer;
+        public bool TestMove;
     }
 }

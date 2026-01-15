@@ -15,16 +15,34 @@ using DetourCLI;
 using MapCLI;
 using DBCStoresCLI;
 using BotFarm.AI;
+using Client.AI.Tasks;
+using BotFarm.AI.Tasks;
 
 namespace BotFarm
 {
     class BotGame : AutomatedGame
     {
+        // Static counter for round-robin class distribution
+        private static int classDistributionCounter = 0;
+        private static readonly object classDistributionLock = new object();
+        private static readonly Class[] availableClasses = { Class.Warrior, Class.Priest, Class.Paladin };
+
         public BotBehaviorSettings Behavior
         {
             get;
             private set;
         }
+
+        private TaskExecutorAI currentRouteExecutor = null;
+
+        // Track if we've already created a fresh character this session
+        private bool hasCreatedFreshCharacter = false;
+
+        /// <summary>
+        /// Indicates whether the last MoveTo call succeeded in finding a path.
+        /// Use this to detect unreachable targets.
+        /// </summary>
+        public bool LastMoveSucceeded { get; private set; } = true;
 
         #region Player members
         DateTime CorpseReclaim;
@@ -134,6 +152,13 @@ namespace BotFarm
             }
             #endregion
 
+            #region TestMove
+            if (Behavior.TestMove)
+            {
+                PushStrategicAI(new TestMoveAI());
+            }
+            #endregion
+
             #region FollowGroupLeader
             if (Behavior.FollowGroupLeader)
             {
@@ -196,7 +221,55 @@ namespace BotFarm
 
         public override void NoCharactersFound()
         {
-            CreateCharacter(Race.Human, Class.Priest);
+            CreateRandomCharacter();
+        }
+
+        public override void PresentCharacterList(Character[] characterList)
+        {
+            // If we've already created a fresh character this session, log in normally
+            if (hasCreatedFreshCharacter)
+            {
+                Log($"Logging in with freshly created character: {characterList[0].Name}");
+                base.PresentCharacterList(characterList);
+                return;
+            }
+
+            // Delete all existing characters before creating a new one
+            Log($"Found {characterList.Length} existing character(s), deleting all to create fresh");
+
+            // Queue all characters for deletion
+            foreach (var character in characterList)
+            {
+                PendingCharacterDeletions.Enqueue(character.GUID);
+            }
+
+            // Start the deletion process
+            IsDeletingCharacters = true;
+            if (PendingCharacterDeletions.Count > 0)
+            {
+                var firstGuid = PendingCharacterDeletions.Dequeue();
+                DeleteCharacter(firstGuid);
+            }
+        }
+
+        protected override void OnAllCharactersDeleted()
+        {
+            Log("All characters deleted, creating new character");
+            CreateRandomCharacter();
+        }
+
+        private void CreateRandomCharacter()
+        {
+            // Round-robin distribution among available classes
+            Class classChoice;
+            lock (classDistributionLock)
+            {
+                classChoice = availableClasses[classDistributionCounter % availableClasses.Length];
+                classDistributionCounter++;
+            }
+            Log($"Creating new {classChoice} character");
+            hasCreatedFreshCharacter = true;
+            CreateCharacter(Race.Human, classChoice);
         }
 
         public override void CharacterCreationFailed(CommandDetail result)
@@ -311,17 +384,34 @@ namespace BotFarm
             using(var detour = new DetourCLI.Detour())
             {
                 List<MapCLI.Point> resultPath;
-                var pathResult = detour.FindPath(Player.X, Player.Y, Player.Z,
-                                        destination.X, destination.Y, destination.Z,
+
+                // Correct Z-coordinates using terrain height - Detour requires accurate heights
+                float startZ = MapCLI.Map.GetHeight(Player.X, Player.Y, Player.Z, Player.MapID);
+                float endZ = MapCLI.Map.GetHeight(destination.X, destination.Y, destination.Z, Player.MapID);
+
+                // Check if GetHeight returned valid values
+                if (float.IsNaN(startZ) || float.IsInfinity(startZ) || startZ < -10000)
+                {
+                    startZ = Player.Z;
+                }
+                if (float.IsNaN(endZ) || float.IsInfinity(endZ) || endZ < -10000)
+                {
+                    endZ = destination.Z;
+                }
+
+                var pathResult = detour.FindPath(Player.X, Player.Y, startZ,
+                                        destination.X, destination.Y, endZ,
                                         Player.MapID, out resultPath);
                 if (pathResult != PathType.Complete)
                 {
                     Log($"Cannot reach destination, FindPath() returned {pathResult} : {destination.ToString()}", Client.UI.LogLevel.Warning);
                     HandleTriggerInput(TriggerActionType.DestinationReached, false);
+                    LastMoveSucceeded = false;
                     return;
                 }
 
                 path = new Path(resultPath, Player.Speed, Player.MapID);
+                LastMoveSucceeded = true;
                 var destinationPoint = path.Destination;
                 destination.SetPosition(destinationPoint.X, destinationPoint.Y, destinationPoint.Z);
             }
@@ -370,6 +460,7 @@ namespace BotFarm
                 previousMovingTime = DateTime.Now;
 
                 remaining = destination - Player.GetPosition();
+
                 if (remaining.Length > MovementEpsilon)
                 {
                     oldRemaining = remaining;
@@ -390,24 +481,27 @@ namespace BotFarm
                     var stopMoving = new MovementPacket(WorldCommand.MSG_MOVE_STOP)
                     {
                         GUID = Player.GUID,
+                        flags = MovementFlags.MOVEMENTFLAG_NONE,
                         X = Player.X,
                         Y = Player.Y,
                         Z = Player.Z,
                         O = path.CurrentOrientation
                     };
                     SendPacket(stopMoving);
+                    
                     Player.SetPosition(stopMoving.GetPosition());
 
                     CancelActionsByFlag(ActionFlag.Movement, false);
 
                     HandleTriggerInput(TriggerActionType.DestinationReached, true);
                 }
-            }, new TimeSpan(0, 0, 0, 0, 100), ActionFlag.Movement,
+            }, GetMovementInterval(), ActionFlag.Movement,
             () =>
             {
                 var stopMoving = new MovementPacket(WorldCommand.MSG_MOVE_STOP)
                 {
                     GUID = Player.GUID,
+                    flags = MovementFlags.MOVEMENTFLAG_NONE,
                     X = Player.X,
                     Y = Player.Y,
                     Z = Player.Z,
@@ -444,6 +538,86 @@ namespace BotFarm
         public override void LogException(Exception ex)
         {
             BotFactory.Instance.Log(string.Format(Username + " - {0} {1}", ex.Message, ex.StackTrace), LogLevel.Error);
+        }
+        #endregion
+
+        #region Task Route System
+        public bool LoadAndStartRoute(string routePath)
+        {
+            try
+            {
+                Log($"Loading task route from: {routePath}", LogLevel.Info);
+                var route = TaskRouteLoader.LoadFromJson(routePath);
+                return StartRoute(route);
+            }
+            catch (Exception ex)
+            {
+                LogException($"Failed to load route from {routePath}: {ex.Message}");
+                return false;
+            }
+        }
+
+        public bool StartRoute(TaskRoute route)
+        {
+            if (route == null)
+            {
+                Log("Cannot start null route", LogLevel.Error);
+                return false;
+            }
+
+            // Stop current route if any
+            StopRoute();
+
+            // Create and push the TaskExecutorAI
+            currentRouteExecutor = new TaskExecutorAI(route);
+            if (PushStrategicAI(currentRouteExecutor))
+            {
+                Log($"Started route: {route.Name}", LogLevel.Info);
+                return true;
+            }
+            else
+            {
+                Log($"Failed to start route: {route.Name}", LogLevel.Error);
+                currentRouteExecutor = null;
+                return false;
+            }
+        }
+
+        public void StopRoute()
+        {
+            if (currentRouteExecutor != null)
+            {
+                Log($"Stopping route: {currentRouteExecutor.Route.Name}", LogLevel.Info);
+                PopStrategicAI(currentRouteExecutor);
+                currentRouteExecutor = null;
+            }
+        }
+
+        public void PauseRoute()
+        {
+            currentRouteExecutor?.Pause();
+        }
+
+        public void ResumeRoute()
+        {
+            currentRouteExecutor?.Resume();
+        }
+
+        public string GetRouteStatus()
+        {
+            if (currentRouteExecutor == null)
+                return "No route active";
+
+            var route = currentRouteExecutor.Route;
+            var currentTask = currentRouteExecutor.CurrentTask;
+            int taskIndex = currentRouteExecutor.CurrentTaskIndex;
+
+            if (currentTask == null)
+            {
+                return $"Route '{route.Name}' - Completed or not started";
+            }
+
+            return $"Route '{route.Name}' - Task {taskIndex + 1}/{route.Tasks.Count}: {currentTask.Name}";
         }
         #endregion
     }
