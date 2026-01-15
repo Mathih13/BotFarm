@@ -40,6 +40,11 @@ namespace BotFarm
         TestSuiteCoordinator suiteCoordinator;
         SnapshotManager snapshotManager;
 
+        // Accessors for service layer
+        internal TestRunCoordinator TestCoordinator => testCoordinator;
+        internal TestSuiteCoordinator SuiteCoordinator => suiteCoordinator;
+        internal IReadOnlyList<BotGame> Bots => bots;
+
         public BotFactory()
         {
             Instance = this;
@@ -1006,6 +1011,15 @@ namespace BotFarm
             }
 
             bot.DisposeAsync().AsTask().Wait();
+        }
+
+        /// <summary>
+        /// Create a ServiceContainer for this factory.
+        /// Services provide a clean API for external consumers.
+        /// </summary>
+        internal Services.ServiceContainer CreateServiceContainer()
+        {
+            return new Services.ServiceContainer(this, testCoordinator, suiteCoordinator);
         }
     }
 }
