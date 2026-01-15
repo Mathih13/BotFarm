@@ -526,13 +526,22 @@ namespace Client
             OutPacket createCharacterPacket = new OutPacket(WorldCommand.CMSG_CHAR_CREATE);
             StringBuilder charName = new StringBuilder();
 
-            // Generate character name from username - convert digits to letters (WoW doesn't allow digits)
+            // Generate character name from username - convert digits to unique letter sequences
+            // Use different offsets for each digit position to avoid collisions
+            int digitPosition = 0;
             foreach (char c in Username)
             {
                 if (char.IsLetter(c))
                     charName.Append(c);
                 else if (char.IsDigit(c))
-                    charName.Append((char)('a' + (c - '0'))); // 0=a, 1=b, 2=c, etc.
+                {
+                    // Use position-based offset to make digit sequences unique
+                    // e.g., "11" becomes "bm" not "bb", "12" becomes "bn" not "bc"
+                    int baseOffset = (c - '0');
+                    int positionOffset = (digitPosition * 11) % 26; // Prime multiplier for variety
+                    charName.Append((char)('a' + ((baseOffset + positionOffset) % 26)));
+                    digitPosition++;
+                }
                 if (charName.Length >= 12)
                     break;
             }
@@ -549,7 +558,7 @@ namespace Client
             for (int i = 1; i < charName.Length; i++)
                 charName[i] = char.ToLower(charName[i]);
 
-            // Ensure Name rules are applied
+            // Ensure no consecutive duplicate characters (WoW naming rules)
             char previousChar = '\0';
             for (int i = 0; i < charName.Length; i++ )
             {
