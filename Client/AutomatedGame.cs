@@ -15,6 +15,7 @@ using Client.Chat.Definitions;
 using Client.World.Definitions;
 using System.Diagnostics;
 using Client.World.Entities;
+using Client.World.Items;
 using System.Collections;
 using DetourCLI;
 using MapCLI;
@@ -28,6 +29,15 @@ namespace Client
         protected const float MovementEpsilon = 0.5f;
         protected const float FollowMovementEpsilon = 5f;
         protected const float FollowTargetRecalculatePathEpsilon = 5f;
+
+        // Movement update interval with jitter to prevent synchronized packet bursts
+        private static readonly Random MovementJitterRandom = new Random();
+        protected static TimeSpan GetMovementInterval()
+        {
+            // 200ms base + 0-50ms jitter = 200-250ms (4-5 updates/sec, more realistic than 50ms)
+            int jitter = MovementJitterRandom.Next(50);
+            return TimeSpan.FromMilliseconds(200 + jitter);
+        }
         #endregion
 
         #region Properties
@@ -91,6 +101,20 @@ namespace Client
             protected set;
         }
 
+        bool activeMoverSet = false;
+
+        void SendSetActiveMover()
+        {
+            if (!activeMoverSet && Player.GUID != 0)
+            {
+                activeMoverSet = true;
+                var setActiveMover = new OutPacket(WorldCommand.CMSG_SET_ACTIVE_MOVER);
+                setActiveMover.Write(Player.GUID);
+                Log($"Enabling movement for Player 0x{Player.GUID:X}", LogLevel.Debug);
+                SendPacket(setActiveMover);
+            }
+        }
+
         public override LogLevel LogLevel
         {
             get
@@ -143,6 +167,63 @@ namespace Client
 
         public UInt64 GroupLeaderGuid { get; private set; }
         public List<UInt64> GroupMembersGuids = new List<UInt64>();
+
+        // Quest interaction state
+        /// <summary>
+        /// GUID of the NPC currently offering a quest (set by SMSG_QUESTGIVER_QUEST_DETAILS)
+        /// </summary>
+        public ulong PendingQuestGiverGuid { get; protected set; }
+        
+        /// <summary>
+        /// Quest ID currently being offered (set by SMSG_QUESTGIVER_QUEST_DETAILS)
+        /// </summary>
+        public uint PendingQuestId { get; protected set; }
+        
+        /// <summary>
+        /// True if quest details are available to accept
+        /// </summary>
+        public bool HasPendingQuestOffer => PendingQuestId != 0;
+        
+        /// <summary>
+        /// GUID of the NPC ready to receive quest turn-in (set by SMSG_QUESTGIVER_OFFER_REWARD)
+        /// </summary>
+        public ulong PendingQuestTurnInGuid { get; protected set; }
+        
+        /// <summary>
+        /// Quest ID ready to be turned in (set by SMSG_QUESTGIVER_OFFER_REWARD)
+        /// </summary>
+        public uint PendingQuestTurnInId { get; protected set; }
+        
+        /// <summary>
+        /// True if quest can be turned in (reward selection available)
+        /// </summary>
+        public bool HasPendingQuestTurnIn => PendingQuestTurnInId != 0;
+        
+        /// <summary>
+        /// Number of reward choices available when turning in quest
+        /// </summary>
+        public uint PendingQuestRewardChoiceCount { get; protected set; }
+
+        /// <summary>
+        /// Current loot window state - tracks what's in the loot window when open
+        /// </summary>
+        public LootWindowState CurrentLoot { get; protected set; } = new LootWindowState();
+
+        // Character deletion state
+        /// <summary>
+        /// Queue of character GUIDs pending deletion
+        /// </summary>
+        protected Queue<ulong> PendingCharacterDeletions { get; set; } = new Queue<ulong>();
+
+        /// <summary>
+        /// True if we're currently deleting characters before creating a new one
+        /// </summary>
+        protected bool IsDeletingCharacters { get; set; }
+
+        /// <summary>
+        /// Random number generator for character creation
+        /// </summary>
+        protected static Random CharacterRandom { get; } = new Random();
         #endregion
 
         public AutomatedGame(string hostname, int port, string username, string password, int realmId, int character)
@@ -294,6 +375,16 @@ namespace Client
             }
         }
 
+        /// <summary>
+        /// Request logout from the server. The bot will reconnect automatically via BotFactory.
+        /// </summary>
+        public void Logout()
+        {
+            Log("Requesting logout", LogLevel.Info);
+            OutPacket logout = new OutPacket(WorldCommand.CMSG_LOGOUT_REQUEST);
+            SendPacket(logout);
+        }
+
         public void SendPacket(OutPacket packet)
         {
             if (socket is WorldSocket)
@@ -437,6 +528,27 @@ namespace Client
             byte outfitId = 0; createCharacterPacket.Write(outfitId);
 
             SendPacket(createCharacterPacket);
+        }
+
+        /// <summary>
+        /// Delete a character by GUID
+        /// </summary>
+        /// <param name="guid">Character GUID to delete</param>
+        public void DeleteCharacter(ulong guid)
+        {
+            Log($"Deleting character 0x{guid:X}");
+            OutPacket packet = new OutPacket(WorldCommand.CMSG_CHAR_DELETE);
+            packet.Write(guid);
+            SendPacket(packet);
+        }
+
+        /// <summary>
+        /// Called when all pending character deletions are complete
+        /// Override this in subclasses to handle post-deletion logic
+        /// </summary>
+        protected virtual void OnAllCharactersDeleted()
+        {
+            // Default: do nothing, subclasses can override
         }
 
         public async ValueTask DisposeAsync()
@@ -656,6 +768,27 @@ namespace Client
             SendPacket(packet);
         }
 
+        /// <summary>
+        /// Send a stationary heartbeat to confirm position to server.
+        /// Useful during combat when standing still to prevent position desync.
+        /// </summary>
+        public void SendPositionHeartbeat()
+        {
+            if (!Player.GetPosition().IsValid)
+                return;
+            
+            var heartbeat = new MovementPacket(WorldCommand.MSG_MOVE_HEARTBEAT)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            SendPacket(heartbeat);
+        }
+
         public void SetFacing(float orientation)
         {
             if (!Player.GetPosition().IsValid)
@@ -674,10 +807,37 @@ namespace Client
             SendPacket(packet);
         }
 
-        public void Follow(WorldObject target)
+        /// <summary>
+        /// Face towards a target position
+        /// </summary>
+        public void FacePosition(Position target)
+        {
+            if (target == null || !Player.GetPosition().IsValid)
+                return;
+            
+            float dx = target.X - Player.X;
+            float dy = target.Y - Player.Y;
+            float orientation = (float)Math.Atan2(dy, dx);
+            SetFacing(orientation);
+        }
+
+        /// <summary>
+        /// Face towards a target object
+        /// </summary>
+        public void FaceTarget(WorldObject target)
         {
             if (target == null)
                 return;
+            FacePosition(target.GetPosition());
+        }
+
+        public void Follow(WorldObject target)
+        {
+            if (target == null)
+            {
+                Log("Follow: target is null", LogLevel.Warning);
+                return;
+            }
 
             Path path = null;
             bool moving = false;
@@ -687,7 +847,10 @@ namespace Client
             ScheduleAction(() =>
             {
                 if (!target.IsValid)
+                {
+                    Log($"Follow: target position invalid - X:{target.X} Y:{target.Y} Z:{target.Z} Map:{target.MapID}", LogLevel.Warning);
                     return;
+                }
 
                 if (target.MapID != Player.MapID)
                 {
@@ -705,6 +868,7 @@ namespace Client
                         var stopMoving = new MovementPacket(WorldCommand.MSG_MOVE_STOP)
                         {
                             GUID = Player.GUID,
+                            flags = MovementFlags.MOVEMENTFLAG_NONE,
                             X = Player.X,
                             Y = Player.Y,
                             Z = Player.Z,
@@ -731,11 +895,29 @@ namespace Client
                     using (var detour = new DetourCLI.Detour())
                     {
                         List<MapCLI.Point> resultPath;
-                        var findPathResult = detour.FindPath(Player.X, Player.Y, Player.Z,
-                                                target.X, target.Y, target.Z,
+
+                        // Correct Z-coordinates using terrain height - Detour requires accurate heights
+                        float startZ = MapCLI.Map.GetHeight(Player.X, Player.Y, Player.Z, Player.MapID);
+                        float endZ = MapCLI.Map.GetHeight(target.X, target.Y, target.Z, Player.MapID);
+
+                        // Check if GetHeight returned valid values
+                        if (float.IsNaN(startZ) || float.IsInfinity(startZ) || startZ < -10000)
+                        {
+                            Log($"Follow: Invalid start height from GetHeight: {startZ}, using Player.Z: {Player.Z:F2}", LogLevel.Warning);
+                            startZ = Player.Z;
+                        }
+                        if (float.IsNaN(endZ) || float.IsInfinity(endZ) || endZ < -10000)
+                        {
+                            Log($"Follow: Invalid end height from GetHeight: {endZ}, using target.Z: {target.Z:F2}", LogLevel.Warning);
+                            endZ = target.Z;
+                        }
+
+                        var findPathResult = detour.FindPath(Player.X, Player.Y, startZ,
+                                                target.X, target.Y, endZ,
                                                 Player.MapID, out resultPath);
                         if (findPathResult != PathType.Complete)
                         {
+                            Log($"Follow: Pathfinding failed with result {findPathResult}", LogLevel.Warning);
                             HandleTriggerInput(TriggerActionType.DestinationReached, false);
                             CancelActionsByFlag(ActionFlag.Movement);
                             return;
@@ -749,6 +931,7 @@ namespace Client
                 if (!moving)
                 {
                     moving = true;
+
                     var facing = new MovementPacket(WorldCommand.MSG_MOVE_SET_FACING)
                     {
                         GUID = Player.GUID,
@@ -777,7 +960,9 @@ namespace Client
                     return;
                 }
 
-                Point progressPosition = path.MoveAlongPath((float)(DateTime.Now - previousMovingTime).TotalSeconds);
+                float deltaTime = (float)(DateTime.Now - previousMovingTime).TotalSeconds;
+                Point progressPosition = path.MoveAlongPath(deltaTime);
+
                 Player.SetPosition(progressPosition.X, progressPosition.Y, progressPosition.Z);
                 previousMovingTime = DateTime.Now;
 
@@ -791,7 +976,7 @@ namespace Client
                     O = path.CurrentOrientation
                 };
                 SendPacket(heartbeat);
-            }, new TimeSpan(0, 0, 0, 0, 100), flags: ActionFlag.Movement);
+            }, GetMovementInterval(), flags: ActionFlag.Movement);
         }
 
         public void JoinLFG(LfgRoleFlag role, IEnumerable<uint> dungeonIDs, string comment = "")
@@ -823,6 +1008,9 @@ namespace Client
             Player.Y = packet.ReadSingle();
             Player.Z = packet.ReadSingle();
             Player.O = packet.ReadSingle();
+
+            // CRITICAL: Send CMSG_SET_ACTIVE_MOVER to enable movement
+            SendSetActiveMover();
         }
 
         [PacketHandler(WorldCommand.SMSG_NEW_WORLD)]
@@ -875,6 +1063,44 @@ namespace Client
                 SendPacket(new OutPacket(WorldCommand.CMSG_CHAR_ENUM));
             else
                 CharacterCreationFailed(response);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_CHAR_DELETE)]
+        protected void HandleCharDelete(InPacket packet)
+        {
+            var response = (CommandDetail)packet.ReadByte();
+            if (response == CommandDetail.CHAR_DELETE_SUCCESS)
+            {
+                Log("Character deleted successfully");
+
+                // Check if there are more characters to delete
+                if (PendingCharacterDeletions.Count > 0)
+                {
+                    var nextGuid = PendingCharacterDeletions.Dequeue();
+                    DeleteCharacter(nextGuid);
+                }
+                else if (IsDeletingCharacters)
+                {
+                    // All characters deleted, trigger callback
+                    IsDeletingCharacters = false;
+                    OnAllCharactersDeleted();
+                }
+            }
+            else
+            {
+                Log($"Character deletion failed: {response}", LogLevel.Error);
+                // Still try to continue with next deletion if any
+                if (PendingCharacterDeletions.Count > 0)
+                {
+                    var nextGuid = PendingCharacterDeletions.Dequeue();
+                    DeleteCharacter(nextGuid);
+                }
+                else if (IsDeletingCharacters)
+                {
+                    IsDeletingCharacters = false;
+                    OnAllCharactersDeleted();
+                }
+            }
         }
 
         [PacketHandler(WorldCommand.SMSG_LOGOUT_RESPONSE)]
@@ -946,6 +1172,758 @@ namespace Client
         {
             updateObjectHandler.HandleMovementPacket(packet);
         }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_MOVE_ROOT)]
+        protected void HandleForceMoveRoot(InPacket packet)
+        {
+            Log("SERVER SENT: SMSG_FORCE_MOVE_ROOT - Player is being ROOTED by server", LogLevel.Warning);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_MOVE_UNROOT)]
+        protected void HandleForceMoveUnroot(InPacket packet)
+        {
+            Log("SERVER SENT: SMSG_FORCE_MOVE_UNROOT - Player is being UNROOTED by server", LogLevel.Info);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_RUN_SPEED_CHANGE)]
+        protected void HandleForceRunSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            // Send ACK
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_RUN_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_WALK_SPEED_CHANGE)]
+        protected void HandleForceWalkSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_WALK_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_SWIM_SPEED_CHANGE)]
+        protected void HandleForceSwimSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_SWIM_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_TIME_SYNC_REQ)]
+        protected void HandleTimeSyncRequest(InPacket packet)
+        {
+            // SMSG_TIME_SYNC_REQ only contains the counter
+            var counter = packet.ReadUInt32();
+
+            // Calculate client time (milliseconds since process start)
+            var clientTime = (uint)(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+
+            var response = new OutPacket(WorldCommand.CMSG_TIME_SYNC_RESP);
+            response.Write(counter);
+            response.Write(clientTime);
+            SendPacket(response);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_LOGIN_SET_TIME_SPEED)]
+        protected void HandleLoginSetTimeSpeed(InPacket packet)
+        {
+            var serverTime = packet.ReadUInt32();
+            var timeScale = packet.ReadSingle();
+            // Silently accept - not needed for bot functionality
+        }
+
+        #region Quest Handlers
+        [PacketHandler(WorldCommand.SMSG_QUESTGIVER_QUEST_DETAILS)]
+        protected void HandleQuestGiverQuestDetails(InPacket packet)
+        {
+            // Quest details are offered - can be accepted
+            PendingQuestGiverGuid = packet.ReadUInt64();
+            packet.ReadUInt64(); // Quest sharer GUID (for shared quests)
+            PendingQuestId = packet.ReadUInt32();
+            
+            Log($"Quest offer received: Quest ID {PendingQuestId} from NPC 0x{PendingQuestGiverGuid:X}", LogLevel.Debug);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_QUESTGIVER_OFFER_REWARD)]
+        protected void HandleQuestGiverOfferReward(InPacket packet)
+        {
+            // Quest can be turned in - reward selection available
+            PendingQuestTurnInGuid = packet.ReadUInt64();
+            PendingQuestTurnInId = packet.ReadUInt32();
+            
+            // Skip to reward choice count (complex packet structure)
+            // Read past title, text, etc.
+            packet.ReadCString(); // Title
+            packet.ReadCString(); // Offer reward text
+            packet.ReadCString(); // Portrait turn-in text
+            packet.ReadCString(); // Portrait turn-in name
+            packet.ReadUInt32(); // Portrait turn-in ID
+            packet.ReadCString(); // Portrait giver text
+            packet.ReadCString(); // Portrait giver name
+            packet.ReadUInt32(); // Portrait giver ID
+            packet.ReadUInt32(); // Auto launch (bool)
+            packet.ReadUInt32(); // Flags
+            packet.ReadUInt32(); // Suggested group num
+            
+            // Emote count
+            var emoteCount = packet.ReadUInt32();
+            for (int i = 0; i < emoteCount; i++)
+            {
+                packet.ReadUInt32(); // Emote delay
+                packet.ReadUInt32(); // Emote ID
+            }
+            
+            PendingQuestRewardChoiceCount = packet.ReadUInt32();
+            
+            Log($"Quest turn-in available: Quest ID {PendingQuestTurnInId} at NPC 0x{PendingQuestTurnInGuid:X}, {PendingQuestRewardChoiceCount} reward choices", LogLevel.Debug);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_QUESTGIVER_REQUEST_ITEMS)]
+        protected void HandleQuestGiverRequestItems(InPacket packet)
+        {
+            // NPC is requesting items for quest completion (not enough items to turn in yet)
+            var npcGuid = packet.ReadUInt64();
+            var questId = packet.ReadUInt32();
+            
+            Log($"Quest items requested: Quest ID {questId} by NPC 0x{npcGuid:X}", LogLevel.Debug);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_QUESTGIVER_QUEST_COMPLETE)]
+        protected void HandleQuestGiverQuestComplete(InPacket packet)
+        {
+            // Quest completed and turned in successfully
+            var questId = packet.ReadUInt32();
+            
+            Log($"Quest completed: Quest ID {questId}", LogLevel.Info);
+            
+            // Clear pending turn-in state
+            if (PendingQuestTurnInId == questId)
+            {
+                PendingQuestTurnInGuid = 0;
+                PendingQuestTurnInId = 0;
+                PendingQuestRewardChoiceCount = 0;
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_QUESTGIVER_QUEST_FAILED)]
+        protected void HandleQuestGiverQuestFailed(InPacket packet)
+        {
+            var questId = packet.ReadUInt32();
+            var reason = packet.ReadUInt32();
+            
+            Log($"Quest failed: Quest ID {questId}, reason {reason}", LogLevel.Warning);
+        }
+
+        /// <summary>
+        /// Accept the currently offered quest (from SMSG_QUESTGIVER_QUEST_DETAILS)
+        /// </summary>
+        public void AcceptQuest()
+        {
+            if (!HasPendingQuestOffer)
+            {
+                Log("AcceptQuest: No pending quest offer", LogLevel.Warning);
+                return;
+            }
+            
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_ACCEPT_QUEST);
+            packet.Write(PendingQuestGiverGuid);
+            packet.Write(PendingQuestId);
+            packet.Write((uint)0); // Unknown field
+            SendPacket(packet);
+            
+            Log($"Accepting quest {PendingQuestId} from NPC 0x{PendingQuestGiverGuid:X}", LogLevel.Debug);
+            
+            // Clear pending offer state
+            PendingQuestGiverGuid = 0;
+            PendingQuestId = 0;
+        }
+        
+        /// <summary>
+        /// Accept a specific quest from a specific NPC
+        /// </summary>
+        public void AcceptQuest(ulong npcGuid, uint questId)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_ACCEPT_QUEST);
+            packet.Write(npcGuid);
+            packet.Write(questId);
+            packet.Write((uint)0); // Unknown field
+            SendPacket(packet);
+            
+            Log($"Accepting quest {questId} from NPC 0x{npcGuid:X}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Turn in the currently pending quest (from SMSG_QUESTGIVER_OFFER_REWARD)
+        /// </summary>
+        /// <param name="rewardChoice">Index of reward to choose (0 if no choice)</param>
+        public void TurnInQuest(uint rewardChoice = 0)
+        {
+            if (!HasPendingQuestTurnIn)
+            {
+                Log("TurnInQuest: No pending quest turn-in", LogLevel.Warning);
+                return;
+            }
+            
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_CHOOSE_REWARD);
+            packet.Write(PendingQuestTurnInGuid);
+            packet.Write(PendingQuestTurnInId);
+            packet.Write(rewardChoice);
+            SendPacket(packet);
+            
+            Log($"Turning in quest {PendingQuestTurnInId} to NPC 0x{PendingQuestTurnInGuid:X}, reward choice {rewardChoice}", LogLevel.Debug);
+        }
+        
+        /// <summary>
+        /// Turn in a specific quest to a specific NPC
+        /// </summary>
+        public void TurnInQuest(ulong npcGuid, uint questId, uint rewardChoice = 0)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_CHOOSE_REWARD);
+            packet.Write(npcGuid);
+            packet.Write(questId);
+            packet.Write(rewardChoice);
+            SendPacket(packet);
+            
+            Log($"Turning in quest {questId} to NPC 0x{npcGuid:X}, reward choice {rewardChoice}", LogLevel.Debug);
+        }
+        
+        /// <summary>
+        /// Request to complete a quest (used when NPC requests items)
+        /// </summary>
+        public void CompleteQuest(ulong npcGuid, uint questId)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_COMPLETE_QUEST);
+            packet.Write(npcGuid);
+            packet.Write(questId);
+            SendPacket(packet);
+            
+            Log($"Requesting quest completion: Quest {questId} at NPC 0x{npcGuid:X}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Request quest details from an NPC for a specific quest
+        /// </summary>
+        public void QueryQuest(ulong npcGuid, uint questId)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_QUESTGIVER_QUERY_QUEST);
+            packet.Write(npcGuid);
+            packet.Write(questId);
+            packet.Write((byte)0); // autoAccept
+            SendPacket(packet);
+            
+            Log($"Querying quest {questId} from NPC 0x{npcGuid:X}", LogLevel.Debug);
+        }
+        #endregion
+
+        #region Combat Methods
+        /// <summary>
+        /// Current combat target GUID
+        /// </summary>
+        public ulong CombatTargetGuid { get; protected set; }
+
+        /// <summary>
+        /// Returns true if currently in combat (attacking something)
+        /// </summary>
+        public bool IsInCombat => CombatTargetGuid != 0;
+
+        /// <summary>
+        /// Set the current target
+        /// </summary>
+        public void SetTarget(ulong targetGuid)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_SET_SELECTION);
+            packet.Write(targetGuid);
+            SendPacket(packet);
+        }
+
+        /// <summary>
+        /// Start auto-attacking a target
+        /// </summary>
+        public void StartAttack(ulong targetGuid)
+        {
+            SetTarget(targetGuid);
+            
+            var packet = new OutPacket(WorldCommand.CMSG_ATTACK_SWING);
+            packet.Write(targetGuid);
+            SendPacket(packet);
+            
+            CombatTargetGuid = targetGuid;
+        }
+
+        /// <summary>
+        /// Stop auto-attacking
+        /// </summary>
+        public void StopAttack()
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_ATTACK_STOP);
+            SendPacket(packet);
+            
+            CombatTargetGuid = 0;
+        }
+
+        /// <summary>
+        /// Cast a spell on the current target
+        /// </summary>
+        /// <param name="spellId">The spell ID to cast</param>
+        public void CastSpell(uint spellId)
+        {
+            CastSpell(spellId, CombatTargetGuid);
+        }
+
+        /// <summary>
+        /// Cast a spell on a specific target
+        /// </summary>
+        /// <param name="spellId">The spell ID to cast</param>
+        /// <param name="targetGuid">The target GUID (0 for self)</param>
+        public void CastSpell(uint spellId, ulong targetGuid)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_CAST_SPELL);
+            packet.Write((byte)0); // cast count
+            packet.Write(spellId);
+            packet.Write((byte)0); // cast flags
+            
+            // Target flags - simplified for unit target
+            if (targetGuid != 0)
+            {
+                packet.Write((uint)0x0002); // TARGET_FLAG_UNIT
+                packet.WritePacketGuid(targetGuid);
+            }
+            else
+            {
+                packet.Write((uint)0x0000); // TARGET_FLAG_SELF
+            }
+            
+            SendPacket(packet);
+        }
+
+        /// <summary>
+        /// Cast a spell on self
+        /// </summary>
+        public void CastSpellOnSelf(uint spellId)
+        {
+            CastSpell(spellId, 0);
+        }
+
+        #region Loot Actions
+        /// <summary>
+        /// Request to open loot on a corpse/object
+        /// </summary>
+        /// <param name="targetGuid">GUID of the lootable target</param>
+        public void RequestLoot(ulong targetGuid)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_LOOT);
+            packet.Write(targetGuid);
+            SendPacket(packet);
+
+            Log($"Requesting loot from 0x{targetGuid:X}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Loot all money from the current loot window
+        /// </summary>
+        public void LootMoney()
+        {
+            if (!CurrentLoot.IsOpen)
+            {
+                Log("LootMoney: No loot window open", LogLevel.Warning);
+                return;
+            }
+
+            if (CurrentLoot.Gold == 0)
+            {
+                return;
+            }
+
+            var packet = new OutPacket(WorldCommand.CMSG_LOOT_MONEY);
+            SendPacket(packet);
+
+            Log($"Looting {CurrentLoot.Gold / 100f:F2}g", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Loot a specific item by slot index
+        /// </summary>
+        /// <param name="slot">Slot index in loot window</param>
+        public void LootItem(byte slot)
+        {
+            if (!CurrentLoot.IsOpen)
+            {
+                Log("LootItem: No loot window open", LogLevel.Warning);
+                return;
+            }
+
+            var packet = new OutPacket(WorldCommand.CMSG_AUTOSTORE_LOOT_ITEM);
+            packet.Write(slot);
+            SendPacket(packet);
+
+            Log($"Looting item from slot {slot}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Loot all items from the current loot window
+        /// </summary>
+        public void LootAllItems()
+        {
+            if (!CurrentLoot.IsOpen)
+            {
+                Log("LootAllItems: No loot window open", LogLevel.Warning);
+                return;
+            }
+
+            // Loot money first
+            if (CurrentLoot.Gold > 0)
+            {
+                LootMoney();
+            }
+
+            // Loot each item
+            foreach (var item in CurrentLoot.Items.ToList())
+            {
+                if (item.SlotType == LootSlotType.AllowLoot ||
+                    item.SlotType == LootSlotType.Owner)
+                {
+                    LootItem(item.Slot);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Close the loot window / release loot
+        /// </summary>
+        public void ReleaseLoot()
+        {
+            if (!CurrentLoot.IsOpen)
+            {
+                return;
+            }
+
+            var packet = new OutPacket(WorldCommand.CMSG_LOOT_RELEASE);
+            packet.Write(CurrentLoot.LootGuid);
+            SendPacket(packet);
+
+            Log($"Releasing loot from 0x{CurrentLoot.LootGuid:X}", LogLevel.Debug);
+        }
+        #endregion
+
+        #region Item Query and Equip
+        /// <summary>
+        /// Query item template data from the server
+        /// </summary>
+        /// <param name="entry">Item entry ID</param>
+        public void QueryItem(uint entry)
+        {
+            // Don't query if already cached or pending
+            if (ItemCache.Get(entry) != null || ItemCache.IsPending(entry))
+                return;
+
+            ItemCache.MarkPending(entry);
+            var packet = new OutPacket(WorldCommand.CMSG_ITEM_QUERY_SINGLE);
+            packet.Write(entry);
+            SendPacket(packet);
+
+            Log($"Querying item template {entry}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Auto-equip an item from a bag slot
+        /// </summary>
+        /// <param name="containerSlot">Container slot (255 for main backpack)</param>
+        /// <param name="slot">Slot within the container (0-15 for backpack)</param>
+        public void AutoEquipItem(byte containerSlot, byte slot)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_AUTOEQUIP_ITEM);
+            packet.Write(containerSlot);
+            packet.Write(slot);
+            SendPacket(packet);
+
+            Log($"Auto-equipping item from container {containerSlot} slot {slot}", LogLevel.Debug);
+        }
+
+        /// <summary>
+        /// Sell an item to a vendor
+        /// </summary>
+        /// <param name="vendorGuid">GUID of the vendor NPC</param>
+        /// <param name="itemGuid">GUID of the item to sell</param>
+        /// <param name="count">Amount to sell (1 for non-stackable items)</param>
+        public void SellItem(ulong vendorGuid, ulong itemGuid, uint count = 1)
+        {
+            var packet = new OutPacket(WorldCommand.CMSG_SELL_ITEM);
+            packet.Write(vendorGuid);
+            packet.Write(itemGuid);
+            packet.Write(count);
+            SendPacket(packet);
+
+            Log($"Selling item 0x{itemGuid:X} to vendor 0x{vendorGuid:X} (count: {count})", LogLevel.Debug);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_SELL_ITEM)]
+        protected void HandleSellItemResponse(InPacket packet)
+        {
+            ulong vendorGuid = packet.ReadUInt64();
+            ulong itemGuid = packet.ReadUInt64();
+            byte error = packet.ReadByte();
+
+            if (error != 0)
+            {
+                // Error codes: 1=CantFind, 2=CantSell (quest/soulbound), 3=CantFindVendor, 4=YouDontOwnThat, 5=Unknown, 6=OnlyEmptyBag
+                string errorMsg = error switch
+                {
+                    1 => "CantFindItem",
+                    2 => "CantSellItem",
+                    3 => "CantFindVendor",
+                    4 => "YouDontOwnThat",
+                    5 => "Unknown",
+                    6 => "OnlyEmptyBag",
+                    _ => $"Error{error}"
+                };
+                Log($"SellItem failed: {errorMsg} (item: 0x{itemGuid:X})", LogLevel.Warning);
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_ITEM_QUERY_SINGLE_RESPONSE)]
+        protected void HandleItemQueryResponse(InPacket packet)
+        {
+            uint entry = packet.ReadUInt32();
+
+            // High bit set means item not found
+            if ((entry & 0x80000000) != 0)
+            {
+                uint actualEntry = entry & 0x7FFFFFFF;
+                ItemCache.ClearPending(actualEntry);
+                Log($"Item {actualEntry} not found in database", LogLevel.Warning);
+                return;
+            }
+
+            var template = new ItemTemplate { Entry = entry };
+
+            template.ItemClass = (ItemClass)packet.ReadUInt32();
+            template.Subclass = packet.ReadUInt32();
+            packet.ReadInt32();  // SoundOverrideSubclass
+
+            // Read 4 localized names, use the first non-empty one
+            template.Name = packet.ReadCString();
+            packet.ReadCString();  // Name2
+            packet.ReadCString();  // Name3
+            packet.ReadCString();  // Name4
+
+            template.DisplayId = packet.ReadUInt32();
+            template.Quality = (ItemQuality)packet.ReadUInt32();
+            template.Flags = packet.ReadUInt32();
+            template.Flags2 = packet.ReadUInt32();
+            template.BuyPrice = packet.ReadUInt32();
+            template.SellPrice = packet.ReadUInt32();
+            template.InventoryType = (InventoryType)packet.ReadUInt32();
+            template.AllowableClass = packet.ReadUInt32();
+            template.AllowableRace = packet.ReadUInt32();
+            template.ItemLevel = packet.ReadUInt32();
+            template.RequiredLevel = packet.ReadUInt32();
+            template.RequiredSkill = packet.ReadUInt32();
+            template.RequiredSkillRank = packet.ReadUInt32();
+
+            // Skip fields we don't need
+            packet.ReadUInt32();  // RequiredSpell
+            packet.ReadUInt32();  // RequiredHonorRank
+            packet.ReadUInt32();  // RequiredCityRank
+            packet.ReadUInt32();  // RequiredReputationFaction
+            packet.ReadUInt32();  // RequiredReputationRank
+            packet.ReadInt32();   // MaxCount
+            packet.ReadInt32();   // Stackable
+            packet.ReadUInt32();  // ContainerSlots
+
+            // Stats
+            uint statsCount = packet.ReadUInt32();
+            for (int i = 0; i < statsCount && i < 10; i++)
+            {
+                var statType = (ItemStatType)packet.ReadUInt32();
+                int statValue = packet.ReadInt32();
+                template.Stats.Add(new ItemStat(statType, statValue));
+            }
+
+            // Skip scaling stat fields
+            packet.ReadUInt32();  // ScalingStatDistribution
+            packet.ReadUInt32();  // ScalingStatValue
+
+            // Damage - read first damage entry (primary weapon damage)
+            template.MinDamage = packet.ReadSingle();
+            template.MaxDamage = packet.ReadSingle();
+            packet.ReadUInt32();  // DamageType
+
+            // Skip remaining 4 damage types
+            for (int i = 0; i < 4; i++)
+            {
+                packet.ReadSingle();  // Min
+                packet.ReadSingle();  // Max
+                packet.ReadUInt32();  // Type
+            }
+
+            template.Armor = packet.ReadUInt32();
+
+            // We skip the rest of the packet (holy/fire/nature resist, delay, ammo type, etc.)
+            // The attack speed is in the delay field but we'd need to read more to get there
+            // For now, estimate from item level for weapons
+            if (template.ItemClass == ItemClass.Weapon && template.MinDamage > 0)
+            {
+                // Rough estimate: base 2.0 speed for one-hand, 3.0 for two-hand
+                if (template.InventoryType == InventoryType.TwoHandWeapon)
+                    template.AttackSpeed = 3000;  // 3.0 sec
+                else
+                    template.AttackSpeed = 2000;  // 2.0 sec
+            }
+
+            ItemCache.Add(template);
+
+            Log($"Cached item template: {template.Name} (Entry: {entry}, iLvl: {template.ItemLevel}, Quality: {template.Quality})", LogLevel.Debug);
+        }
+        #endregion
+
+        [PacketHandler(WorldCommand.SMSG_ATTACK_START)]
+        protected void HandleAttackStart(InPacket packet)
+        {
+            var attackerGuid = packet.ReadUInt64();
+            var victimGuid = packet.ReadUInt64();
+            
+            if (attackerGuid == Player.GUID)
+            {
+                CombatTargetGuid = victimGuid;
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_ATTACK_STOP)]
+        protected void HandleAttackStop(InPacket packet)
+        {
+            var attackerGuidPacked = packet.ReadPackedGuid();
+            var victimGuidPacked = packet.ReadPackedGuid();
+            
+            if (attackerGuidPacked == Player.GUID)
+            {
+                CombatTargetGuid = 0;
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_ATTACKERSTATEUPDATE)]
+        protected void HandleAttackerStateUpdate(InPacket packet)
+        {
+            // Combat log update - silently accept for now
+            // Could be used to track damage dealt/received
+        }
+
+        #region Loot Handlers
+        [PacketHandler(WorldCommand.SMSG_LOOT_RESPONSE)]
+        protected void HandleLootResponse(InPacket packet)
+        {
+            CurrentLoot.Clear();
+
+            CurrentLoot.LootGuid = packet.ReadUInt64();
+            CurrentLoot.Type = (LootType)packet.ReadByte();
+
+            if (CurrentLoot.Type == LootType.None)
+            {
+                // Loot failed - corpse already looted or no permission
+                Log("Loot failed: no loot available", LogLevel.Debug);
+                return;
+            }
+
+            CurrentLoot.Gold = packet.ReadUInt32();
+            byte itemCount = packet.ReadByte();
+
+            for (int i = 0; i < itemCount; i++)
+            {
+                var item = new LootItem
+                {
+                    Slot = packet.ReadByte(),
+                    ItemId = packet.ReadUInt32(),
+                    Count = packet.ReadUInt32(),
+                    DisplayId = packet.ReadUInt32(),
+                    RandomPropertySeed = packet.ReadInt32(),
+                    RandomPropertyId = packet.ReadInt32(),
+                    SlotType = (LootSlotType)packet.ReadByte()
+                };
+                CurrentLoot.Items.Add(item);
+            }
+
+            CurrentLoot.IsOpen = true;
+
+            Log($"Loot window opened: {CurrentLoot.Gold / 100f:F2}g, {CurrentLoot.Items.Count} items", LogLevel.Debug);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_LOOT_RELEASE_RESPONSE)]
+        protected void HandleLootReleaseResponse(InPacket packet)
+        {
+            var guid = packet.ReadUInt64();
+            var unknown = packet.ReadByte(); // Always 1
+
+            if (guid == CurrentLoot.LootGuid)
+            {
+                Log("Loot window closed", LogLevel.Debug);
+                CurrentLoot.Clear();
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_LOOT_REMOVED)]
+        protected void HandleLootRemoved(InPacket packet)
+        {
+            byte slot = packet.ReadByte();
+
+            // Remove item from our tracked loot
+            var item = CurrentLoot.Items.FirstOrDefault(i => i.Slot == slot);
+            if (item != null)
+            {
+                CurrentLoot.Items.Remove(item);
+                Log($"Looted item from slot {slot}", LogLevel.Debug);
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_LOOT_MONEY_NOTIFY)]
+        protected void HandleLootMoneyNotify(InPacket packet)
+        {
+            uint gold = packet.ReadUInt32();
+            // byte isGroup = packet.ReadByte(); // 0 = solo, 1 = shared
+
+            Log($"Looted {gold / 100f:F2}g", LogLevel.Debug);
+            CurrentLoot.Gold = 0;
+        }
+        #endregion
+        #endregion
 
         class UpdateObjectHandler
         {
@@ -1042,6 +2020,13 @@ namespace Client
                 updateType = ObjectUpdateType.UPDATETYPE_MOVEMENT;
                 guid = packet.ReadPackedGuid();
                 ReadMovementInfo(packet);
+
+                // Don't apply server position corrections for our own player while actively moving
+                // The server echoes back our movement packets, but applying them causes stuttering
+                // because it fights with our pathfinding interpolation. We only need corrections
+                // for other players/units, or for teleports (which use different opcodes).
+                // Our own position is tracked via the Path class during movement.
+
                 HandleUpdateData();
             }
 
@@ -1171,8 +2156,22 @@ namespace Client
             {
                 if (guid == game.Player.GUID)
                 {
+                    // Apply movement speeds if we received them
+                    if (movementSpeeds.ContainsKey(UnitMoveType.MOVE_RUN))
+                    {
+                        float runSpeed = movementSpeeds[UnitMoveType.MOVE_RUN];
+                        if (Math.Abs(game.Player.Speed - runSpeed) > 0.01f)
+                        {
+                            game.Log($"Setting Player run speed to {runSpeed:F2}", LogLevel.Debug);
+                            game.Player.Speed = runSpeed;
+                        }
+                    }
+
                     foreach (var pair in updateFields)
                         game.Player[pair.Key] = pair.Value;
+
+                    // CRITICAL: Ensure CMSG_SET_ACTIVE_MOVER is sent after player object creation
+                    game.SendSetActiveMover();
                 }
                 else
                 {

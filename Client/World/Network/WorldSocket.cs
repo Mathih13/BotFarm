@@ -32,11 +32,9 @@ namespace Client.World.Network
             WorldCommand.SMSG_SEND_UNLEARN_SPELLS,
             WorldCommand.SMSG_ACTION_BUTTONS,
             WorldCommand.SMSG_EQUIPMENT_SET_LIST,
-            WorldCommand.SMSG_LOGIN_SET_TIME_SPEED,
             WorldCommand.SMSG_INIT_WORLD_STATES,
             WorldCommand.SMSG_UPDATE_WORLD_STATE,
             WorldCommand.SMSG_WEATHER,
-            WorldCommand.SMSG_TIME_SYNC_REQ,
             WorldCommand.SMSG_NOTIFICATION,
             WorldCommand.SMSG_SPLINE_MOVE_STOP_SWIM,
             WorldCommand.SMSG_SPLINE_MOVE_SET_WALK_MODE,
@@ -47,13 +45,6 @@ namespace Client.World.Network
             WorldCommand.SMSG_UPDATE_INSTANCE_OWNERSHIP,
             WorldCommand.SMSG_EMOTE,
             WorldCommand.SMSG_LFG_UPDATE_PARTY,
-            WorldCommand.SMSG_FORCE_SWIM_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_SWIM_BACK_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_RUN_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_RUN_BACK_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_FLIGHT_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_FLIGHT_SPEED_CHANGE,
-            WorldCommand.SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE,
             WorldCommand.CMSG_MOVE_SET_COLLISION_HGT_ACK,
             WorldCommand.SMSG_ITEM_TIME_UPDATE,
             WorldCommand.SMSG_SPLINE_MOVE_UNROOT,
@@ -215,12 +206,23 @@ namespace Client.World.Network
         
         private void ReadAsync(EventHandler<SocketAsyncEventArgs> callback, object state = null)
         {
-            if (Disposing)
+            if (Disposing || Disposed)
                 return;
 
-            SocketAsyncState = state;
-            SocketArgs.SetBuffer(ReceiveData, Index, Remaining);
-            SocketCallback = callback;
+            lock (_socketLock)
+            {
+                SocketAsyncState = state;
+                try
+                {
+                    SocketArgs.SetBuffer(ReceiveData, Index, Remaining);
+                }
+                catch (InvalidOperationException)
+                {
+                    // SocketAsyncEventArgs already in use - wait for current operation
+                    return;
+                }
+                SocketCallback = callback;
+            }
             ReceiveAsync();
         }
 
@@ -422,6 +424,13 @@ namespace Client.World.Network
                 {
                     if (!IgnoredOpcodes.Contains(packet.Header.Command) && !NotYetImplementedOpcodes.Contains(packet.Header.Command))
                         Game.UI.LogDebug(string.Format("Unknown or unhandled command '{0}'", packet.Header.Command));
+
+                    // Temporarily log ALL unhandled packets to catch speed changes and movement packets
+                    string cmdStr = packet.Header.Command.ToString();
+                    if (cmdStr.Contains("SPEED") || cmdStr.Contains("ROOT") || cmdStr.Contains("MOVE"))
+                    {
+                        Game.UI.Log(string.Format("UNHANDLED PACKET: {0}", packet.Header.Command), Client.UI.LogLevel.Warning);
+                    }
                 }
                 Game.HandleTriggerInput(TriggerActionType.Opcode, packet);
             }
@@ -475,19 +484,30 @@ namespace Client.World.Network
 
         public void Send(OutPacket packet)
         {
+            if (Disposing || Disposed || packet == null)
+                return;
+                
+            var client = connection?.Client;
+            if (client == null)
+                return;
+                
             LastOutOpcode = packet.Header.Command;
             _lastOutOpcodeTime = DateTime.Now;
             byte[] data = packet.Finalize(authenticationCrypto);
 
             try
             {
-                connection.Client.Send(data, 0, data.Length, SocketFlags.None);
+                client.Send(data, 0, data.Length, SocketFlags.None);
             }
             catch(ObjectDisposedException ex)
             {
                 Game.UI.LogException(ex);
             }
             catch(EndOfStreamException ex)
+            {
+                Game.UI.LogException(ex);
+            }
+            catch(SocketException ex)
             {
                 Game.UI.LogException(ex);
             }

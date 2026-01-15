@@ -93,16 +93,44 @@ namespace Client.Authentication.Network
 
         void Send(ISendable sendable)
         {
-            LastOutOpcode = sendable.Command;
-            _lastOutOpcodeTime = DateTime.Now;
-            sendable.Send(stream);
+            if (Disposing || Disposed || stream == null)
+                return;
+                
+            try
+            {
+                LastOutOpcode = sendable.Command;
+                _lastOutOpcodeTime = DateTime.Now;
+                sendable.Send(stream);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Stream was disposed during send - ignore
+            }
+            catch (IOException)
+            {
+                // Connection closed during send - ignore
+            }
         }
 
         void Send(byte[] buffer)
         {
-            LastOutOpcode = (AuthCommand)buffer[0];
-            _lastOutOpcodeTime = DateTime.Now;
-            stream.Write(buffer, 0, buffer.Length);
+            if (Disposing || Disposed || stream == null)
+                return;
+                
+            try
+            {
+                LastOutOpcode = (AuthCommand)buffer[0];
+                _lastOutOpcodeTime = DateTime.Now;
+                stream.Write(buffer, 0, buffer.Length);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Stream was disposed during send - ignore
+            }
+            catch (IOException)
+            {
+                // Connection closed during send - ignore
+            }
         }
 
         #region Handlers
@@ -403,6 +431,14 @@ namespace Client.Authentication.Network
         {
             try
             {
+                // Guard against race condition where connection is closed before callback fires
+                if (this.connection == null || this.connection.Client == null)
+                {
+                    Game.UI.LogLine("AuthSocket: Connection closed before read completed", LogLevel.Warning);
+                    Game.Reconnect();
+                    return;
+                }
+
                 int size = this.connection.Client.EndReceive(result);
 
                 if (size == 0)
@@ -421,14 +457,16 @@ namespace Client.Authentication.Network
                 else
                     Game.UI.LogLine(string.Format("Unkown or unhandled command '{0}'", command), LogLevel.Warning);
             }
-            // these exceptions can happen as race condition on shutdown
+            // these exceptions can happen as race condition on shutdown/reconnect
             catch (ObjectDisposedException ex)
             {
                 Game.UI.LogException(ex);
+                Game.Reconnect();
             }
             catch (NullReferenceException ex)
             {
                 Game.UI.LogException(ex);
+                Game.Reconnect();
             }
             catch (SocketException ex)
             {

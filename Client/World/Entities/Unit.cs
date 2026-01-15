@@ -11,7 +11,7 @@ namespace Client.World.Entities
         public float Speed
         {
             get;
-            private set;
+            set;
         }
 
         public Unit()

@@ -84,9 +84,12 @@ namespace Client
             float distanceToNextPoint = (points[NextPointIndex] - _currentPosition).Length;
             if(totalDistance < distanceToNextPoint)
             {
+                // Interpolate position along the path segment including Z
+                // The pathfinding (Detour/MMaps) provides waypoints with correct Z values
+                // that account for terrain, bridges, ramps, and other walkable surfaces.
+                // We interpolate between these waypoints to get smooth movement.
                 Point result = _currentPosition + (points[NextPointIndex] - _currentPosition).Direction * totalDistance;
                 _currentPosition = result;
-                _currentPosition.Z = MapCLI.Map.GetHeight(_currentPosition.X, _currentPosition.Y, _currentPosition.Z, MapID);
             }
             else
             {
@@ -115,13 +118,14 @@ namespace Client
         {
             NextPointIndex++;
             if (NextPointIndex >= points.Length)
+            {
                 _currentPosition = points.Last();
+            }
             else
             {
                 float remainingTime = (totalDistance - distanceToNextPoint) / Speed;
                 _currentPosition = MoveAlongPath(remainingTime);
             }
-            _currentPosition.Z = MapCLI.Map.GetHeight(_currentPosition.X, _currentPosition.Y, _currentPosition.Z, MapID);
         }
 
         public float TimeBeforeNextPoint()

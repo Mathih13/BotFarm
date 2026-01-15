@@ -90,7 +90,7 @@ namespace Client
         {
             var action = actions[index];
             actions.RemoveAt(index);
-            if (cancel)
+            if (cancel && action != null)
                 action.Cancel();
         }
 

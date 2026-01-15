@@ -75,6 +75,11 @@ namespace Client.World.Entities
         {
             return Utility.IsType(GUID, highGuidType);
         }
+
+        /// <summary>
+        /// Gets the entry ID of this object (creature template ID, gameobject template ID, etc.)
+        /// </summary>
+        public uint Entry => this[(int)ObjectField.OBJECT_FIELD_ENTRY];
     }
 
     public class UpdateFieldEventArg : EventArgs
