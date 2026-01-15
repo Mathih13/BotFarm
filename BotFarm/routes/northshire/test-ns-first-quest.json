@@ -2,18 +2,12 @@
   "name": "Northshire - First Quest Chain",
   "description": "Tests Quest 783 'A Threat Within' - Deputy Willem to Marshal McBride with assertions",
   "harness": {
-    "botCount": 1,
+    "botCount": 3,
     "accountPrefix": "test_ns1_",
-    "classes": ["Warrior"],
+    "classes": ["Warrior", "Priest", "Paladin"],
     "race": "Human",
-    "level": 1,
+    "level": 2,
     "items": [],
-    "startPosition": {
-      "mapId": 0,
-      "x": -8949.95,
-      "y": -132.493,
-      "z": 83.5312
-    },
     "setupTimeoutSeconds": 60,
     "testTimeoutSeconds": 90
   },

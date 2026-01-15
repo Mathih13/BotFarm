@@ -4,16 +4,12 @@
   "harness": {
     "botCount": 2,
     "accountPrefix": "test_ns3_",
-    "classes": ["Warrior", "Priest"],
+    "classes": [ "Warrior", "Priest" ],
     "race": "Human",
     "level": 1,
     "items": [],
-    "startPosition": {
-      "mapId": 0,
-      "x": -8949.95,
-      "y": -132.493,
-      "z": 83.5312
-    },
+    "completedQuests": [ 783 ],
+   
     "setupTimeoutSeconds": 60,
     "testTimeoutSeconds": 120
   },
