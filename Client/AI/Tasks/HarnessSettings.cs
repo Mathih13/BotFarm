@@ -38,6 +38,11 @@ namespace Client.AI.Tasks
         public List<ItemGrant> Items { get; set; } = new List<ItemGrant>();
 
         /// <summary>
+        /// Quest IDs to mark as completed before test starts (for setting up prerequisites)
+        /// </summary>
+        public List<uint> CompletedQuests { get; set; } = new List<uint>();
+
+        /// <summary>
         /// Starting position for bots (teleported after login)
         /// </summary>
         public StartPosition StartPosition { get; set; }

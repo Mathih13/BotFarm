@@ -288,10 +288,10 @@ namespace BotFarm
         }
 
         /// <summary>
-        /// Set up a character via Remote Access commands (level, items)
+        /// Set up a character via Remote Access commands (level, items, completed quests)
         /// Character must be offline for these commands to work
         /// </summary>
-        public void SetupCharacterViaRA(string characterName, int level, List<ItemGrant> items)
+        public void SetupCharacterViaRA(string characterName, int level, List<ItemGrant> items, List<uint> completedQuests = null)
         {
             if (remoteAccess == null)
             {
@@ -319,6 +319,22 @@ namespace BotFarm
                         Log($"RA: Sending item {item.Entry}x{item.Count} to {characterName}");
                         string response = remoteAccess.SendCommand(itemCmd);
                         Log($"RA item response: {response}");
+                    }
+                }
+
+                // Complete prerequisite quests via SQL (RA doesn't support quest complete for offline chars)
+                if (completedQuests != null && completedQuests.Count > 0)
+                {
+                    foreach (var questId in completedQuests)
+                    {
+                        // Insert into character_queststatus_rewarded to mark quest as completed
+                        // This uses a subquery to get the character GUID from the name
+                        string sql = $"INSERT IGNORE INTO character_queststatus_rewarded (guid, quest, active) " +
+                                     $"SELECT guid, {questId}, 0 FROM characters WHERE name = '{characterName}'";
+                        string questCmd = $".server execute \"{sql}\"";
+                        Log($"RA: Completing quest {questId} for {characterName} via SQL");
+                        string response = remoteAccess.SendCommand(questCmd);
+                        Log($"RA quest response: {response}");
                     }
                 }
             }

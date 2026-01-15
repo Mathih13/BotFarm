@@ -56,6 +56,9 @@ namespace BotFarm.AI.Tasks
         [JsonPropertyName("items")]
         public List<ItemGrantData> Items { get; set; }
 
+        [JsonPropertyName("completedQuests")]
+        public List<uint> CompletedQuests { get; set; }
+
         [JsonPropertyName("startPosition")]
         public StartPositionData StartPosition { get; set; }
 
@@ -198,6 +201,12 @@ namespace BotFarm.AI.Tasks
                 {
                     settings.Items.Add(new ItemGrant { Entry = item.Entry, Count = item.Count });
                 }
+            }
+
+            // Parse completed quests
+            if (data.CompletedQuests != null && data.CompletedQuests.Count > 0)
+            {
+                settings.CompletedQuests = new List<uint>(data.CompletedQuests);
             }
 
             // Parse start position
