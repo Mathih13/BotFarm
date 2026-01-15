@@ -66,6 +66,7 @@ Routes define bot requirements in a `harness` section:
 | `race` | Character race (must be compatible with classes) |
 | `level` | Starting level (set via RA command) |
 | `items` | Starting items `{entry, count}` (given via RA) |
+| `completedQuests` | Quest IDs to mark completed (requires MySQL - see Phase 2) |
 | `startPosition` | World coordinates where bots spawn/teleport |
 | `setupTimeoutSeconds` | Timeout for bot creation and login |
 | `testTimeoutSeconds` | Timeout for route completion |
@@ -227,20 +228,46 @@ routes/
 
 ---
 
-## Phase 2: Character Setup via RA (Planned)
+## Phase 2: Character Setup via RA (Implemented)
 
 ### Goal
 Set character level and give items after creation using RA commands.
 
-### Implementation
+### Challenge
+TrinityCore's `.character level` command requires the character to be **offline**. This necessitated a two-phase approach in the test run coordinator.
+
+### Two-Phase Bot Lifecycle
+
+**File:** `BotFarm/Testing/TestRunCoordinator.cs`
+
+```
+Phase 1: Character Creation
+  1. Create accounts via RA
+  2. Create bots and start them
+  3. Wait for login and character creation
+  4. Capture character names
+  5. Exit (logout) all bots
+
+Character Setup (while offline):
+  6. Call SetupCharacterViaRA() for level/items
+
+Phase 2: Test Execution
+  7. Create fresh bot instances
+  8. Start and wait for login
+  9. Teleport to start position
+  10. Start routes
+```
+
+### RA Command Methods
 
 **File:** `BotFarm/BotFactory.cs`
 
 ```csharp
 public void SetupCharacterViaRA(string charName, int level, List<ItemGrant> items)
 {
-    // Character must be offline for these commands
-    remoteAccess.SendCommand($".character level {charName} {level}");
+    // Character must be offline for level command
+    if (level > 1)
+        remoteAccess.SendCommand($".character level {charName} {level}");
 
     foreach (var item in items)
     {
@@ -248,15 +275,64 @@ public void SetupCharacterViaRA(string charName, int level, List<ItemGrant> item
             $".send items {charName} \"Test Setup\" \"Items\" {item.Entry}:{item.Count}");
     }
 }
+
+public void TeleportCharacterViaRA(string charName, uint mapId, float x, float y, float z)
+{
+    // Works on online characters
+    remoteAccess.SendCommand($".tele name {charName} {mapId} {x} {y} {z}");
+}
 ```
 
-### Teleport to Start Position
+### Helper Method
+
+**File:** `BotFarm/Testing/TestRunCoordinator.cs`
 
 ```csharp
-// After login, teleport to harness start position
-remoteAccess.SendCommand(
-    $".tele name {charName} {startPosition.MapId} {startPosition.X} {startPosition.Y} {startPosition.Z}");
+private async Task WaitForAllBotsLoggedIn(List<BotGame> bots, int timeoutSeconds, CancellationToken ct)
 ```
+
+Waits for all bots to log in with proper cancellation support and timeout.
+
+### Completed Quests (Partial - Requires MySQL)
+
+**Harness Field:** `completedQuests`
+
+Some quests require prerequisite quests to be completed before they can be accepted. The harness supports a `completedQuests` array to set up this state:
+
+```json
+{
+  "harness": {
+    "botCount": 2,
+    "completedQuests": [783],
+    ...
+  }
+}
+```
+
+**Current Status:** The field is parsed and passed through the system, but quest completion is **non-functional** because:
+
+1. **`.quest complete` requires online target** - The RA command doesn't accept a character name, only works on the currently targeted player in-game
+2. **`.server execute` doesn't exist** - The TrinityCore build doesn't have an RA command to execute arbitrary SQL
+
+**Planned Solution:** Add direct MySQL database connection to insert quest completion records:
+
+```sql
+-- Insert into character_queststatus_rewarded to mark quest as completed
+INSERT INTO character_queststatus_rewarded (guid, quest, active)
+SELECT guid, 783, 0 FROM characters WHERE name = 'CharacterName';
+```
+
+**Implementation needed:**
+1. Add `MySql.Data` NuGet package to BotFarm project
+2. Add MySQL connection settings to `App.config` (host, port, user, password, database)
+3. Create `DatabaseAccess` class with method to execute character setup SQL
+4. Update `SetupCharacterViaRA()` to use MySQL for quest completion
+
+**Files already modified (awaiting MySQL):**
+- `Client/AI/Tasks/HarnessSettings.cs` - `CompletedQuests` property added
+- `BotFarm/AI/Tasks/TaskRouteLoader.cs` - JSON parsing for `completedQuests`
+- `BotFarm/Testing/TestRunCoordinator.cs` - `needsSetup` condition includes `CompletedQuests`
+- `BotFarm/BotFactory.cs` - `SetupCharacterViaRA()` signature accepts `completedQuests` parameter
 
 ---
 
@@ -429,7 +505,7 @@ public interface IRouteService
 
 ### Technology Stack
 
-- **Frontend:** React + TypeScript + Vite (Tanstack Start)
+- **Frontend:** React + TypeScript + Vite (Tanstack Start), use shadCN for components with tailwind
 - **Backend:** ASP.NET Core Web API
 - **Real-time:** SignalR for live updates
 - **State:** React Query for server state
@@ -515,7 +591,7 @@ Client/AutomatedGame.cs                 - Added IsQuestInLog() helper
 
 BotFarm/Testing/HarnessSettings.cs      - Harness configuration model
 BotFarm/Testing/TestRun.cs              - Test run and result models
-BotFarm/Testing/TestRunCoordinator.cs   - Test orchestration
+BotFarm/Testing/TestRunCoordinator.cs   - Test orchestration, two-phase bot lifecycle, character setup
 BotFarm/Testing/TestReportGenerator.cs  - Report generation
 
 BotFarm/AI/Tasks/TaskRouteLoader.cs     - Parse harness config + assertion tasks
@@ -526,7 +602,7 @@ BotFarm/AI/Tasks/AssertQuestNotInLogTask.cs - Quest not in log assertion
 BotFarm/AI/Tasks/AssertHasItemTask.cs       - Item count assertion
 BotFarm/AI/Tasks/AssertLevelTask.cs         - Level assertion
 
-BotFarm/BotFactory.cs                   - Test commands, CreateTestBot
+BotFarm/BotFactory.cs                   - Test commands, CreateTestBot, SetupCharacterViaRA, TeleportCharacterViaRA
 BotFarm/BotGame.cs                      - Harness-aware character creation
 BotFarm/Program.cs                      - Default test mode
 ```
