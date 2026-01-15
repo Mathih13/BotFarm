@@ -338,3 +338,15 @@ ASALocalRun/
 
 # BeatPulse healthcheck temp database
 healthchecksdb
+# Claude Code
+.claude/
+tmpclaude-*
+*.claude-*
+
+# Test/debug files
+test-*.ps1
+test-*.cs
+BotFarm/AI/TestMoveAI.cs
+
+# Native libraries (user must copy manually)
+BotFarm/lib/
