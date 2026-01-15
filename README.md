@@ -236,4 +236,3 @@ The pathfinding requires native libraries from TrinityCore:
 
 - Original BotFarm by [jackpoz](https://github.com/jackpoz/BotFarm)
 - Authentication and base implementation from mangos, WCell, PseuWoW, TrinityCore
-- Task system and enhancements developed with Claude AI assistance
