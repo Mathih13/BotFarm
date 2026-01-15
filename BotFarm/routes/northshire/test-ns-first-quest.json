@@ -1,0 +1,92 @@
+{
+  "name": "Northshire - First Quest Chain",
+  "description": "Tests Quest 783 'A Threat Within' - Deputy Willem to Marshal McBride with assertions",
+  "harness": {
+    "botCount": 1,
+    "accountPrefix": "test_ns1_",
+    "classes": ["Warrior"],
+    "race": "Human",
+    "level": 1,
+    "items": [],
+    "startPosition": {
+      "mapId": 0,
+      "x": -8949.95,
+      "y": -132.493,
+      "z": 83.5312
+    },
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 90
+  },
+  "loop": false,
+  "tasks": [
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Starting first quest chain test",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 823,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 823
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 823,
+        "questId": 783
+      }
+    },
+    {
+      "type": "AssertQuestInLog",
+      "parameters": {
+        "questId": 783,
+        "message": "Quest 783 should be in log after accepting"
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 783,
+        "rewardChoice": 0
+      }
+    },
+    {
+      "type": "AssertQuestNotInLog",
+      "parameters": {
+        "questId": 783,
+        "message": "Quest 783 should be complete after turn-in"
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "First quest chain complete - all assertions passed",
+        "level": "Info"
+      }
+    }
+  ]
+}

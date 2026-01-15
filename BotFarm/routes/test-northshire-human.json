@@ -1,0 +1,283 @@
+{
+  "name": "Northshire Human Starter Test",
+  "description": "Full E2E test for human starter zone - movement, quests, combat, class trainers",
+  "harness": {
+    "botCount": 2,
+    "accountPrefix": "test_ns_",
+    "classes": [ "Warrior", "Priest" ],
+    "race": "Human",
+    "level": 1,
+    "items": [],
+    "startPosition": {
+      "mapId": 0,
+      "x": -8949.95,
+      "y": -132.493,
+      "z": 83.5312
+    },
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 600
+  },
+  "loop": false,
+  "tasks": [
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 823,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 823
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 823,
+        "questId": 783
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 783,
+        "rewardChoice": 0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 7
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8916.945,
+        "y": -126.61651,
+        "z": 81.28983,
+        "mapId": 0,
+        "threshold": 5.0
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 823,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 823
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 823,
+        "questId": 5261
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 196,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 196
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 196,
+        "questId": 5261,
+        "rewardChoice": 0
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 196,
+        "questId": 33
+      }
+    },
+    {
+      "type": "Adventure",
+      "parameters": {
+        "targetEntries": [
+          6,
+          299,
+          257
+        ],
+        "killRequirements": [
+          {
+            "entry": 6,
+            "count": 8
+          }
+        ],
+        "collectItems": [
+          {
+            "itemEntry": 50432,
+            "count": 8,
+            "droppedBy": 299
+          }
+        ],
+        "searchRadius": 400,
+        "defendSelf": true
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8916.945,
+        "y": -126.61651,
+        "z": 81.28983,
+        "mapId": 0,
+        "threshold": 5.0
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 7,
+        "rewardChoice": 0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 15
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "classQuests": {
+          "Warrior": 3100,
+          "Priest": 3103,
+          "Paladin": 3101
+        }
+      }
+    },
+    {
+      "type": "EquipItems",
+      "parameters": {}
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 1213
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 1213
+      }
+    },
+    {
+      "type": "SellItems",
+      "parameters": {
+        "npcEntry": 1213
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8897.578,
+        "y": -173.6554,
+        "z": 81.578026,
+        "mapId": 0,
+        "threshold": 5.0
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "threshold": 4.0,
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "classQuests": {
+          "Warrior": 3100,
+          "Priest": 3103,
+          "Paladin": 3101
+        },
+        "classNPCs": {
+          "Warrior": 911,
+          "Priest": 375,
+          "Paladin": 925
+        }
+      }
+    }
+  ]
+}

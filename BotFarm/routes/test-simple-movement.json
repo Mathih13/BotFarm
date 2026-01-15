@@ -1,0 +1,94 @@
+{
+  "name": "Simple Movement Test",
+  "description": "Basic test route that validates bot spawning and movement without combat",
+  "harness": {
+    "botCount": 1,
+    "accountPrefix": "test_move_",
+    "classes": ["Warrior"],
+    "race": "Human",
+    "level": 1,
+    "items": [],
+    "startPosition": {
+      "mapId": 0,
+      "x": -8949.95,
+      "y": -132.493,
+      "z": 83.5312
+    },
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 120
+  },
+  "loop": false,
+  "tasks": [
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Test started - validating spawn position",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "Wait",
+      "parameters": {
+        "seconds": 2
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Moving to first waypoint",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8914.0,
+        "y": -133.0,
+        "z": 81.7,
+        "mapId": 0,
+        "threshold": 3.0
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "First waypoint reached, moving to second",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8949.0,
+        "y": -106.0,
+        "z": 83.5,
+        "mapId": 0,
+        "threshold": 3.0
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Second waypoint reached, returning to start",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8949.95,
+        "y": -132.493,
+        "z": 83.5312,
+        "mapId": 0,
+        "threshold": 3.0
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Simple movement test completed successfully",
+        "level": "Info"
+      }
+    }
+  ]
+}

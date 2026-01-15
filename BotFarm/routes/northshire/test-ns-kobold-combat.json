@@ -1,0 +1,143 @@
+{
+  "name": "Northshire - Kobold Combat",
+  "description": "Tests Quest 7 'Kobold Camp Cleanup' and Quest 33 combat with Adventure task",
+  "harness": {
+    "botCount": 2,
+    "accountPrefix": "test_ns2_",
+    "classes": ["Warrior", "Priest"],
+    "race": "Human",
+    "level": 1,
+    "items": [],
+    "startPosition": {
+      "mapId": 0,
+      "x": -8949.95,
+      "y": -132.493,
+      "z": 83.5312
+    },
+    "setupTimeoutSeconds": 60,
+    "testTimeoutSeconds": 300
+  },
+  "loop": false,
+  "tasks": [
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Starting kobold combat test",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 7
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 196,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 196
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 196,
+        "questId": 33
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Quests accepted, starting Adventure",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "Adventure",
+      "parameters": {
+        "targetEntries": [6, 299, 257],
+        "killRequirements": [
+          {
+            "entry": 6,
+            "count": 8
+          }
+        ],
+        "collectItems": [
+          {
+            "itemEntry": 50432,
+            "count": 8,
+            "droppedBy": 299
+          }
+        ],
+        "searchRadius": 400,
+        "defendSelf": true
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Combat complete, returning to turn in",
+        "level": "Info"
+      }
+    },
+    {
+      "type": "MoveToLocation",
+      "parameters": {
+        "x": -8916.945,
+        "y": -126.61651,
+        "z": 81.28983,
+        "mapId": 0,
+        "threshold": 5.0
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
+        "npcEntry": 197,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 7,
+        "rewardChoice": 0
+      }
+    },
+    {
+      "type": "LogMessage",
+      "parameters": {
+        "message": "Kobold combat test complete",
+        "level": "Info"
+      }
+    }
+  ]
+}
