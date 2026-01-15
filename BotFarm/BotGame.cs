@@ -38,6 +38,9 @@ namespace BotFarm
         // Track if we've already created a fresh character this session
         private bool hasCreatedFreshCharacter = false;
 
+        // Skip character creation/deletion - use existing character (for Phase 2 of test runs)
+        private bool skipCharacterCreation = false;
+
         // Harness settings for test framework
         private HarnessSettings harnessSettings = null;
         private string assignedClass = null;
@@ -250,6 +253,14 @@ namespace BotFarm
                 return;
             }
 
+            // If skipCharacterCreation is set (Phase 2 of test run), just log in with existing character
+            if (skipCharacterCreation && characterList.Length > 0)
+            {
+                Log($"Using existing character (Phase 2): {characterList[0].Name}");
+                base.PresentCharacterList(characterList);
+                return;
+            }
+
             // Delete all existing characters before creating a new one
             Log($"Found {characterList.Length} existing character(s), deleting all to create fresh");
 
@@ -304,6 +315,19 @@ namespace BotFarm
             Log($"Harness settings applied: Class={assignedClass}, Race={assignedRace}, Index={botIndex}");
         }
 
+        /// <summary>
+        /// Set to true to skip character deletion/creation and just log in with existing character.
+        /// Used for Phase 2 of test runs after character setup via RA.
+        /// </summary>
+        public void SetSkipCharacterCreation(bool skip)
+        {
+            this.skipCharacterCreation = skip;
+            if (skip)
+            {
+                Log("Skip character creation enabled - will use existing character");
+            }
+        }
+
         private void CreateRandomCharacter()
         {
             Class classChoice;
@@ -342,7 +366,7 @@ namespace BotFarm
 
         public override void CharacterCreationFailed(CommandDetail result)
         {
-#warning ToDo: create a character with a different name
+            // Note: Name collisions are now mitigated by position-based digit encoding in CreateCharacter()
             Log($"Bot {Username} failed creating a character with error {result.ToString()}", LogLevel.Error);
         }
 

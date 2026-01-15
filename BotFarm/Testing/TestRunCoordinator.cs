@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BotFarm.AI.Tasks;
@@ -91,85 +92,143 @@ namespace BotFarm.Testing
             factory.Log($"Starting test run {testRun.Id} for route '{route.Name}' with {harness.BotCount} bots");
             TestRunStarted?.Invoke(this, testRun);
 
-            var bots = new List<BotGame>();
+            var testBots = new List<BotGame>();
             var botResults = new Dictionary<BotGame, BotTestResult>();
+            var characterNames = new Dictionary<int, string>(); // index -> character name
 
             try
             {
-                // Create bots
+                // ========== PHASE 1: Character Creation ==========
+                // Bots must log in to create characters, then log out for level/item/quest setup
+                bool needsSetup = harness.Level > 1
+                    || (harness.Items?.Count > 0)
+                    || (harness.CompletedQuests?.Count > 0);
+
+                factory.Log($"Phase 1: Creating {harness.BotCount} bot accounts and characters...");
+
+                var phase1Bots = new List<BotGame>();
+
+                // Create bots for character creation
                 for (int i = 0; i < harness.BotCount; i++)
                 {
                     ct.ThrowIfCancellationRequested();
 
                     string username = $"{harness.AccountPrefix}{i + 1}";
 
-                    // Determine class for this bot
-                    string botClass = harness.Classes != null && harness.Classes.Count > 0
-                        ? harness.Classes[i % harness.Classes.Count]
-                        : "Warrior";
-
                     // Create bot via factory (handles RA account creation with fixed password)
                     var bot = factory.CreateTestBot(username, harness, i, startBot: false);
-
-                    var result = testRun.AddBot(username, $"char_{i + 1}", botClass);
-                    botResults[bot] = result;
-                    bots.Add(bot);
+                    phase1Bots.Add(bot);
                 }
 
-                // Start all bots
-                testRun.Status = TestRunStatus.Running;
-                foreach (var bot in bots)
+                // Start phase 1 bots with staggered delay to avoid auth server throttling
+                foreach (var bot in phase1Bots)
                 {
                     bot.Start();
+                    await Task.Delay(500, ct); // Small delay between starts
                 }
 
-                // Wait for all bots to login (with timeout)
-                var setupTimeout = TimeSpan.FromSeconds(harness.SetupTimeoutSeconds);
-                var setupDeadline = DateTime.UtcNow + setupTimeout;
+                await WaitForAllBotsLoggedIn(phase1Bots, harness.SetupTimeoutSeconds, ct);
 
-                factory.Log($"Waiting for {bots.Count} bots to login (timeout: {setupTimeout.TotalSeconds}s)");
-
-                while (DateTime.UtcNow < setupDeadline)
+                // Capture character names before logout
+                for (int i = 0; i < phase1Bots.Count; i++)
                 {
-                    ct.ThrowIfCancellationRequested();
-
-                    int loggedIn = 0;
-                    foreach (var bot in bots)
+                    characterNames[i] = phase1Bots[i].World.SelectedCharacter?.Name;
+                    if (string.IsNullOrEmpty(characterNames[i]))
                     {
-                        if (bot.LoggedIn)
-                            loggedIn++;
+                        throw new InvalidOperationException($"Bot {i} failed to create character");
+                    }
+                }
+
+                // If we need to set level/items, must log out first (TrinityCore requirement)
+                if (needsSetup)
+                {
+                    factory.Log("Phase 1 complete. Logging out for character setup...");
+
+                    // Exit all phase 1 bots in parallel (awaitable logout + dispose)
+                    await Task.WhenAll(phase1Bots.Select(bot => bot.Exit()));
+
+                    await Task.Delay(1000, ct); // Brief wait for server to process
+
+                    // ========== CHARACTER SETUP VIA RA ==========
+                    factory.Log($"Setting up characters: level={harness.Level}, items={harness.Items?.Count ?? 0}, quests={harness.CompletedQuests?.Count ?? 0}");
+
+                    foreach (var kvp in characterNames)
+                    {
+                        factory.SetupCharacterViaRA(kvp.Value, harness.Level, harness.Items, harness.CompletedQuests);
                     }
 
-                    if (loggedIn == bots.Count)
+                    await Task.Delay(500, ct); // Brief wait for RA commands
+
+                    // ========== PHASE 2: Test Execution ==========
+                    factory.Log("Phase 2: Reconnecting bots for test execution...");
+
+                    // Create fresh bot instances for test run
+                    for (int i = 0; i < harness.BotCount; i++)
                     {
-                        factory.Log($"All {bots.Count} bots logged in successfully");
-                        break;
+                        ct.ThrowIfCancellationRequested();
+
+                        string username = $"{harness.AccountPrefix}{i + 1}";
+                        string botClass = harness.Classes != null && harness.Classes.Count > 0
+                            ? harness.Classes[i % harness.Classes.Count]
+                            : "Warrior";
+
+                        var bot = factory.CreateTestBot(username, harness, i, startBot: false);
+
+                        // Tell bot to use existing character (don't delete and recreate)
+                        bot.SetSkipCharacterCreation(true);
+
+                        var result = testRun.AddBot(username, characterNames[i], botClass);
+                        botResults[bot] = result;
+                        testBots.Add(bot);
                     }
 
-                    await Task.Delay(500, ct);
-                }
+                    // Start phase 2 bots with staggered delay
+                    testRun.Status = TestRunStatus.Running;
+                    foreach (var bot in testBots)
+                    {
+                        bot.Start();
+                        await Task.Delay(500, ct); // Small delay between starts
+                    }
 
-                // Check if all bots logged in
-                int finalLoggedIn = 0;
-                foreach (var bot in bots)
+                    await WaitForAllBotsLoggedIn(testBots, harness.SetupTimeoutSeconds, ct);
+                }
+                else
                 {
-                    if (bot.LoggedIn)
-                        finalLoggedIn++;
+                    // No setup needed - use phase 1 bots directly
+                    factory.Log("No level/item setup needed. Continuing with current bots...");
+                    testRun.Status = TestRunStatus.Running;
+
+                    for (int i = 0; i < phase1Bots.Count; i++)
+                    {
+                        string botClass = harness.Classes != null && harness.Classes.Count > 0
+                            ? harness.Classes[i % harness.Classes.Count]
+                            : "Warrior";
+
+                        var result = testRun.AddBot($"{harness.AccountPrefix}{i + 1}", characterNames[i], botClass);
+                        botResults[phase1Bots[i]] = result;
+                        testBots.Add(phase1Bots[i]);
+                    }
                 }
 
-                if (finalLoggedIn < bots.Count)
+                // Teleport to start position (bots must be online)
+                if (harness.StartPosition != null)
                 {
-                    throw new TimeoutException($"Only {finalLoggedIn}/{bots.Count} bots logged in within timeout");
+                    factory.Log($"Teleporting bots to start position...");
+                    foreach (var kvp in characterNames)
+                    {
+                        factory.TeleportCharacterViaRA(
+                            kvp.Value,
+                            harness.StartPosition.MapId,
+                            harness.StartPosition.X,
+                            harness.StartPosition.Y,
+                            harness.StartPosition.Z);
+                    }
+                    await Task.Delay(1000, ct); // Wait for teleport
                 }
-
-                // Setup characters via RA (level, items) - bots must be logged out for level command
-                // Note: This is tricky because bots are now online. We may need to use in-game commands instead.
-                // For now, we'll skip level/item setup if the harness level > 1 since .character level needs offline char
-                // TODO: Implement proper character setup flow
 
                 // Start routes on all bots
-                factory.Log($"Starting route '{route.Name}' on all {bots.Count} bots");
-                foreach (var bot in bots)
+                factory.Log($"Starting route '{route.Name}' on all {testBots.Count} bots");
+                foreach (var bot in testBots)
                 {
                     var result = botResults[bot];
 
@@ -204,7 +263,7 @@ namespace BotFarm.Testing
                     ct.ThrowIfCancellationRequested();
 
                     // Check if all bots completed
-                    if (testRun.BotsCompleted == bots.Count)
+                    if (testRun.BotsCompleted == testBots.Count)
                     {
                         break;
                     }
@@ -213,20 +272,20 @@ namespace BotFarm.Testing
                 }
 
                 // Determine final status
-                if (testRun.BotsCompleted < bots.Count)
+                if (testRun.BotsCompleted < testBots.Count)
                 {
                     testRun.Timeout();
-                    factory.Log($"Test run {testRun.Id} timed out: {testRun.BotsCompleted}/{bots.Count} bots completed");
+                    factory.Log($"Test run {testRun.Id} timed out: {testRun.BotsCompleted}/{testBots.Count} bots completed");
                 }
                 else if (testRun.BotsFailed > 0)
                 {
-                    testRun.Complete(false, $"{testRun.BotsFailed}/{bots.Count} bots failed");
-                    factory.Log($"Test run {testRun.Id} completed with failures: {testRun.BotsFailed}/{bots.Count} failed");
+                    testRun.Complete(false, $"{testRun.BotsFailed}/{testBots.Count} bots failed");
+                    factory.Log($"Test run {testRun.Id} completed with failures: {testRun.BotsFailed}/{testBots.Count} failed");
                 }
                 else
                 {
                     testRun.Complete(true);
-                    factory.Log($"Test run {testRun.Id} completed successfully: {testRun.BotsPassed}/{bots.Count} passed");
+                    factory.Log($"Test run {testRun.Id} completed successfully: {testRun.BotsPassed}/{testBots.Count} passed");
                 }
             }
             catch (OperationCanceledException)
@@ -241,15 +300,15 @@ namespace BotFarm.Testing
             }
             finally
             {
-                // Cleanup bots
-                foreach (var bot in bots)
+                // Cleanup bots in parallel
+                await Task.WhenAll(testBots.Select(async bot =>
                 {
                     try
                     {
                         await bot.DisposeAsync();
                     }
                     catch { }
-                }
+                }));
 
                 // Move from active to completed
                 lock (runLock)
@@ -278,6 +337,32 @@ namespace BotFarm.Testing
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Wait for all bots to log in with timeout
+        /// </summary>
+        private async Task WaitForAllBotsLoggedIn(List<BotGame> bots, int timeoutSeconds, CancellationToken ct)
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(timeoutSeconds);
+
+            while (DateTime.UtcNow < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                int loggedIn = bots.Count(b => b.LoggedIn);
+                if (loggedIn == bots.Count)
+                {
+                    factory.Log($"All {bots.Count} bots logged in successfully");
+                    return;
+                }
+
+                await Task.Delay(500, ct);
+            }
+
+            int final = bots.Count(b => b.LoggedIn);
+            if (final < bots.Count)
+                throw new TimeoutException($"Only {final}/{bots.Count} bots logged in within timeout");
         }
     }
 }
