@@ -13,10 +13,12 @@ namespace BotFarm.AI
     {
         int scheduledAction;
         AutomatedGame game;
+        bool followingStarted = false;
 
         public bool Activate(AutomatedGame game)
         {
             this.game = game;
+            followingStarted = false;
             ScheduleFollowLeader();
             return true;
         }
@@ -26,19 +28,47 @@ namespace BotFarm.AI
             scheduledAction = game.ScheduleAction(() =>
             {
                 if (!game.Player.IsAlive)
+                {
+                    game.Log("FollowGroupLeaderAI: Player is dead, stopping follow", Client.UI.LogLevel.Debug);
+                    game.CancelActionsByFlag(ActionFlag.Movement);
+                    followingStarted = false;
                     return;
+                }
 
                 // Check if we are in a party and follow the party leader
                 if (game.GroupLeaderGuid == 0)
+                {
+                    game.Log("FollowGroupLeaderAI: No group leader GUID set", Client.UI.LogLevel.Debug);
+                    if (followingStarted)
+                    {
+                        game.CancelActionsByFlag(ActionFlag.Movement);
+                        followingStarted = false;
+                    }
                     return;
+                }
 
                 WorldObject groupLeader;
                 if (game.Objects.TryGetValue(game.GroupLeaderGuid, out groupLeader))
                 {
-                    game.CancelActionsByFlag(ActionFlag.Movement);
-                    game.Follow(groupLeader);
+                    // Only start following once - Follow() handles continuous updates
+                    if (!followingStarted)
+                    {
+                        game.Log($"FollowGroupLeaderAI: Starting to follow leader GUID 0x{game.GroupLeaderGuid:X}", Client.UI.LogLevel.Info);
+                        game.CancelActionsByFlag(ActionFlag.Movement);
+                        game.Follow(groupLeader);
+                        followingStarted = true;
+                    }
                 }
-            }, DateTime.Now.AddSeconds(30), new TimeSpan(0, 0, 30));
+                else
+                {
+                    game.Log($"FollowGroupLeaderAI: Leader GUID 0x{game.GroupLeaderGuid:X} not in Objects (out of range or not visible)", Client.UI.LogLevel.Warning);
+                    if (followingStarted)
+                    {
+                        game.CancelActionsByFlag(ActionFlag.Movement);
+                        followingStarted = false;
+                    }
+                }
+            }, DateTime.Now.AddSeconds(1), new TimeSpan(0, 0, 30));
         }
 
         public bool AllowPause()
