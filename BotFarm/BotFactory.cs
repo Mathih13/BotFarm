@@ -15,10 +15,11 @@ using System.Threading.Tasks;
 using System.Xml.Serialization;
 using Client.AI.Tasks;
 using BotFarm.Testing;
+using BotFarm.Web;
 
 namespace BotFarm
 {
-    class BotFactory : IDisposable
+    public class BotFactory : IDisposable
     {
         public static BotFactory Instance
         {
@@ -39,6 +40,7 @@ namespace BotFarm
         TestRunCoordinator testCoordinator;
         TestSuiteCoordinator suiteCoordinator;
         SnapshotManager snapshotManager;
+        WebApiHost webApiHost;
 
         public BotFactory()
         {
@@ -198,6 +200,21 @@ namespace BotFarm
                 suiteCoordinator.SuiteStarted += (s, suite) => Log($"Test suite started: {suite.Id} - {suite.SuiteName}");
                 suiteCoordinator.SuiteCompleted += (s, suite) =>
                     Log($"Test suite completed: {suite.Id} - Status: {suite.Status} ({suite.TestsPassed}/{suite.TotalTests} passed)");
+
+                // Initialize Web API host if enabled
+                if (Settings.Default.EnableWebUI)
+                {
+                    try
+                    {
+                        webApiHost = new WebApiHost(this, testCoordinator, suiteCoordinator, Settings.Default.WebUIPort);
+                        webApiHost.StartAsync().Wait();
+                    }
+                    catch (Exception webEx)
+                    {
+                        Log($"Failed to start Web API: {webEx.Message}");
+                        webApiHost = null;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -224,9 +241,9 @@ namespace BotFarm
             {
                 lock (remoteAccess)
                 {
-                    Console.WriteLine($"CreateBot: Sending create account command for {username}");
-                    string response = remoteAccess.SendCommand($".account create {username} {password}");
-                    Log($"RA create account {username} response: {response}");
+                    Console.WriteLine($"CreateBot: Sending create account command for {username} with GM level 2");
+                    string response = remoteAccess.SendCommand($".account create {username} {password} 2");
+                    Log($"RA create account {username} (GM level 2) response: {response}");
                     Console.WriteLine($"CreateBot: RA response: {response}");
                 }
             }
@@ -292,13 +309,13 @@ namespace BotFarm
 
             Log($"Creating test bot: {username}");
 
-            // Create account via RA (will succeed if new, fail silently if exists)
+            // Create account via RA with GM level 2 (will succeed if new, fail silently if exists)
             if (remoteAccess != null)
             {
                 lock (remoteAccess)
                 {
-                    string response = remoteAccess.SendCommand($".account create {username} {testPassword}");
-                    Log($"RA create account {username} response: {response}");
+                    string response = remoteAccess.SendCommand($".account create {username} {testPassword} 2");
+                    Log($"RA create account {username} (GM level 2) response: {response}");
                 }
             }
             else
@@ -920,6 +937,18 @@ namespace BotFarm
             Log("Shutting down BotFactory");
             Log("This might take at least 20 seconds to allow all bots to properly logout");
 
+            // Stop web API first
+            if (webApiHost != null)
+            {
+                try
+                {
+                    webApiHost.StopAsync().Wait(TimeSpan.FromSeconds(5));
+                    webApiHost.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
+                }
+                catch { }
+                webApiHost = null;
+            }
+
             List<Task> botsDisposing = new List<Task>(bots.Count);
             foreach (var bot in bots)
                 botsDisposing.Add(bot.DisposeAsync().AsTask());
@@ -995,6 +1024,17 @@ namespace BotFarm
             return botBehaviors.ContainsKey(defaultBehaviorName)
                 ? botBehaviors[defaultBehaviorName]
                 : botBehaviors.Values.First();
+        }
+
+        /// <summary>
+        /// Get count of active (running) bots for status API
+        /// </summary>
+        public int GetActiveBotCount()
+        {
+            lock (bots)
+            {
+                return bots.Count(b => b.Running);
+            }
         }
 
         public void RemoveBot(BotGame bot)
