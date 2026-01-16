@@ -839,6 +839,14 @@ namespace Client
         }
 
         /// <summary>
+        /// Add quest to quest log using GM command (requires GM level 2+)
+        /// </summary>
+        public void AddQuest(uint questId)
+        {
+            DoSayChat($".quest add {questId}");
+        }
+
+        /// <summary>
         /// Complete quest using GM command (requires GM level 2+)
         /// </summary>
         public void CompleteQuest(uint questId)
