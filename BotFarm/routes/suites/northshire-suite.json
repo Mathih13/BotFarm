@@ -5,12 +5,10 @@
       "route": "../northshire/test-ns-first-quest.json"
     },
     {
-      "route": "../northshire/test-ns-kobold-combat.json",
-      "dependsOn": ["test-ns-first-quest"]
+      "route": "../northshire/test-ns-kobold-combat.json"
     },
     {
-      "route": "../northshire/test-ns-class-trainer.json",
-      "dependsOn": ["test-ns-kobold-combat"]
+      "route": "../northshire/test-ns-class-trainer.json"
     }
   ]
 }
