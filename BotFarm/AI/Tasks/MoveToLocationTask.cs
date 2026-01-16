@@ -57,7 +57,8 @@ namespace BotFarm.AI.Tasks
             
             if (!game.Player.IsAlive)
             {
-                game.Log($"MoveToLocationTask: Player is dead", LogLevel.Warning);
+                ErrorMessage = "Player is dead";
+                game.Log($"MoveToLocationTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             

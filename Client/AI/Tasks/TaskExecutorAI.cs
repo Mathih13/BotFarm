@@ -77,8 +77,9 @@ namespace Client.AI.Tasks
                         break;
 
                     case TaskResult.Failed:
-                        game.Log($"TaskExecutorAI: Task '{currentTask.Name}' failed", LogLevel.Error);
-                        FireTaskCompleted(currentTask, TaskResult.Failed, "Task failed");
+                        var errorMsg = currentTask.ErrorMessage ?? "Task failed";
+                        game.Log($"TaskExecutorAI: Task '{currentTask.Name}' failed: {errorMsg}", LogLevel.Error);
+                        FireTaskCompleted(currentTask, TaskResult.Failed, errorMsg);
                         tasksFailed++;
                         currentTask.Cleanup(game);
 

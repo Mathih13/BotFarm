@@ -6,7 +6,7 @@ namespace BotFarm.Testing
     /// Manages character snapshots for test setup and restoration.
     /// Wraps DatabaseAccess snapshot methods with additional orchestration.
     /// </summary>
-    internal class SnapshotManager
+    public class SnapshotManager
     {
         private readonly DatabaseAccess database;
         private bool tablesInitialized = false;

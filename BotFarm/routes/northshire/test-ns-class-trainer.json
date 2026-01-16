@@ -4,12 +4,11 @@
   "harness": {
     "botCount": 2,
     "accountPrefix": "test_ns3_",
-    "classes": [ "Warrior", "Priest" ],
+    "classes": [ "Warrior", "Priest"],
     "race": "Human",
     "level": 1,
     "items": [],
     "completedQuests": [ 783 ],
-   
     "setupTimeoutSeconds": 60,
     "testTimeoutSeconds": 120
   },
@@ -46,6 +45,7 @@
         }
       }
     },
+
     {
       "type": "LogMessage",
       "parameters": {
@@ -99,6 +99,9 @@
         }
       }
     },
+    {
+
+    }
     {
       "type": "LogMessage",
       "parameters": {

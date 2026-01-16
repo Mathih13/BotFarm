@@ -242,7 +242,8 @@ namespace BotFarm.AI.Tasks
             
             if (!game.Player.IsAlive)
             {
-                game.Log("KillMobsTask: Player died", LogLevel.Warning);
+                ErrorMessage = "Player died";
+                game.Log($"KillMobsTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
 
@@ -452,7 +453,8 @@ namespace BotFarm.AI.Tasks
                     // Check if too many total failures - bot is probably stuck in bad position
                     if (totalPathFailures >= MaxTotalPathFailuresBeforeLogout)
                     {
-                        game.Log($"KillMobsTask: Too many path failures ({totalPathFailures}), logging out to reset position", LogLevel.Error);
+                        ErrorMessage = $"Too many path failures ({totalPathFailures}), logging out to reset position";
+                        game.Log($"KillMobsTask: {ErrorMessage}", LogLevel.Error);
                         game.Logout();
                         return TaskResult.Failed;
                     }
@@ -509,6 +511,9 @@ namespace BotFarm.AI.Tasks
 
                 // Force re-pathfind to target
                 game.MoveTo(currentTarget.GetPosition());
+
+                // Face the target before attacking
+                game.FaceTarget(currentTarget);
 
                 // Restart attack
                 game.StartAttack(currentTarget.GUID);

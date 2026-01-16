@@ -20,7 +20,7 @@ using BotFarm.AI.Tasks;
 
 namespace BotFarm
 {
-    class BotGame : AutomatedGame
+    public class BotGame : AutomatedGame
     {
         // Static counter for round-robin class distribution
         private static int classDistributionCounter = 0;
@@ -37,9 +37,6 @@ namespace BotFarm
 
         // Track if we've already created a fresh character this session
         private bool hasCreatedFreshCharacter = false;
-
-        // Skip character creation/deletion - use existing character (for Phase 2 of test runs)
-        private bool skipCharacterCreation = false;
 
         // Harness settings for test framework
         private HarnessSettings harnessSettings = null;
@@ -253,14 +250,6 @@ namespace BotFarm
                 return;
             }
 
-            // If skipCharacterCreation is set (Phase 2 of test run), just log in with existing character
-            if (skipCharacterCreation && characterList.Length > 0)
-            {
-                Log($"Using existing character (Phase 2): {characterList[0].Name}");
-                base.PresentCharacterList(characterList);
-                return;
-            }
-
             // Delete all existing characters before creating a new one
             Log($"Found {characterList.Length} existing character(s), deleting all to create fresh");
 
@@ -316,16 +305,60 @@ namespace BotFarm
         }
 
         /// <summary>
-        /// Set to true to skip character deletion/creation and just log in with existing character.
-        /// Used for Phase 2 of test runs after character setup via RA.
+        /// Apply harness setup using GM commands (requires GM level 2).
+        /// Called after bot is logged in to set level, add items, complete quests, and teleport.
         /// </summary>
-        public void SetSkipCharacterCreation(bool skip)
+        public void ApplyHarnessSetup()
         {
-            this.skipCharacterCreation = skip;
-            if (skip)
+            if (harnessSettings == null)
             {
-                Log("Skip character creation enabled - will use existing character");
+                Log("No harness settings to apply", LogLevel.Warning);
+                return;
             }
+
+            Log($"Applying harness setup via GM commands...");
+
+            // Level up (relative, so level 1->10 needs .levelup 9)
+            if (harnessSettings.Level > 1)
+            {
+                int levelsToAdd = harnessSettings.Level - 1;
+                Log($"Leveling up by {levelsToAdd} levels (to level {harnessSettings.Level})");
+                LevelUp(levelsToAdd);
+            }
+
+            // Add items
+            if (harnessSettings.Items != null && harnessSettings.Items.Count > 0)
+            {
+                foreach (var item in harnessSettings.Items)
+                {
+                    Log($"Adding item {item.Entry} x{item.Count}");
+                    AddItem(item.Entry, item.Count);
+                }
+            }
+
+            // Complete prerequisite quests (add then complete to handle quests not in log)
+            if (harnessSettings.CompletedQuests != null && harnessSettings.CompletedQuests.Count > 0)
+            {
+                foreach (var questId in harnessSettings.CompletedQuests)
+                {
+                    Log($"Adding and completing quest {questId}");
+                    AddQuest(questId);
+                    CompleteQuest(questId);
+                }
+            }
+
+            // Teleport to start position
+            if (harnessSettings.StartPosition != null)
+            {
+                Log($"Teleporting to start position: ({harnessSettings.StartPosition.X}, {harnessSettings.StartPosition.Y}, {harnessSettings.StartPosition.Z}) on map {harnessSettings.StartPosition.MapId}");
+                TeleportToPosition(
+                    harnessSettings.StartPosition.X,
+                    harnessSettings.StartPosition.Y,
+                    harnessSettings.StartPosition.Z,
+                    harnessSettings.StartPosition.MapId);
+            }
+
+            Log("Harness setup complete");
         }
 
         private void CreateRandomCharacter()
@@ -645,6 +678,62 @@ namespace BotFarm
             catch (Exception ex)
             {
                 LogException($"Failed to load route from {routePath}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Load a route and create the executor, but don't start it yet.
+        /// Use this when you need to subscribe to events before the route begins.
+        /// Call StartLoadedRoute() after subscribing to events.
+        /// </summary>
+        /// <returns>The executor to subscribe to, or null if load failed</returns>
+        public TaskExecutorAI LoadRoute(string routePath)
+        {
+            try
+            {
+                Log($"Loading task route from: {routePath}", LogLevel.Info);
+                var route = TaskRouteLoader.LoadFromJson(routePath);
+                if (route == null)
+                {
+                    Log("Failed to load route: null result", LogLevel.Error);
+                    return null;
+                }
+
+                // Stop current route if any
+                StopRoute();
+
+                // Create the executor but don't push it yet
+                currentRouteExecutor = new TaskExecutorAI(route);
+                return currentRouteExecutor;
+            }
+            catch (Exception ex)
+            {
+                LogException($"Failed to load route from {routePath}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Start a previously loaded route. Call this after subscribing to events on the executor.
+        /// </summary>
+        public bool StartLoadedRoute()
+        {
+            if (currentRouteExecutor == null)
+            {
+                Log("No route loaded to start", LogLevel.Error);
+                return false;
+            }
+
+            if (PushStrategicAI(currentRouteExecutor))
+            {
+                Log($"Started route: {currentRouteExecutor.Route.Name}", LogLevel.Info);
+                return true;
+            }
+            else
+            {
+                Log($"Failed to start route: {currentRouteExecutor.Route.Name}", LogLevel.Error);
+                currentRouteExecutor = null;
                 return false;
             }
         }

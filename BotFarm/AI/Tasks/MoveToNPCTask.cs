@@ -183,13 +183,15 @@ namespace BotFarm.AI.Tasks
             
             if (!game.Player.IsAlive)
             {
-                game.Log($"MoveToNPCTask: Player is dead", LogLevel.Warning);
+                ErrorMessage = "Player is dead";
+                game.Log($"MoveToNPCTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             
             if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
             {
-                game.Log($"MoveToNPCTask: NPC {resolvedNpcEntry} is no longer visible", LogLevel.Error);
+                ErrorMessage = $"NPC {resolvedNpcEntry} is no longer visible";
+                game.Log($"MoveToNPCTask: {ErrorMessage}", LogLevel.Error);
                 return TaskResult.Failed;
             }
             

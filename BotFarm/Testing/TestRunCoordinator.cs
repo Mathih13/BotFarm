@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +13,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Coordinates test runs - spawns bots, monitors progress, collects results
     /// </summary>
-    internal class TestRunCoordinator
+    public class TestRunCoordinator
     {
         private readonly BotFactory factory;
         private readonly SnapshotManager snapshotManager;
@@ -22,6 +23,7 @@ namespace BotFarm.Testing
 
         public event EventHandler<TestRun> TestRunStarted;
         public event EventHandler<TestRun> TestRunCompleted;
+        public event EventHandler<TestRun> TestRunStatusChanged;
         public event EventHandler<(TestRun run, BotTestResult bot)> BotCompleted;
 
         public TestRunCoordinator(BotFactory factory, SnapshotManager snapshotManager = null)
@@ -52,6 +54,19 @@ namespace BotFarm.Testing
             }
         }
 
+        /// <summary>
+        /// Get count of bots currently active in test runs
+        /// </summary>
+        public int GetActiveTestBotCount()
+        {
+            lock (runLock)
+            {
+                return activeRuns.Values
+                    .Where(r => r.Status == TestRunStatus.SettingUp || r.Status == TestRunStatus.Running)
+                    .Sum(r => r.Harness?.BotCount ?? 0);
+            }
+        }
+
         public TestRun GetTestRun(string runId)
         {
             lock (runLock)
@@ -63,12 +78,17 @@ namespace BotFarm.Testing
         }
 
         /// <summary>
-        /// Start a test run for a route with harness settings
+        /// Start a test run for a route with harness settings.
+        /// Uses single-phase approach: bots log in, create characters, then use GM commands
+        /// for setup (level, items, quests, teleport) without needing to log out.
         /// </summary>
         public async Task<TestRun> StartTestRunAsync(string routePath, CancellationToken ct = default)
         {
+            // Resolve the route path - if it's a relative path, resolve it relative to the routes directory
+            var fullRoutePath = ResolveRoutePath(routePath);
+
             // Load the route
-            var route = TaskRouteLoader.LoadFromJson(routePath);
+            var route = TaskRouteLoader.LoadFromJson(fullRoutePath);
             if (route == null)
             {
                 throw new InvalidOperationException($"Failed to load route from {routePath}");
@@ -96,161 +116,89 @@ namespace BotFarm.Testing
 
             var testBots = new List<BotGame>();
             var botResults = new Dictionary<BotGame, BotTestResult>();
-            var characterNames = new Dictionary<int, string>(); // index -> character name
 
             try
             {
-                // ========== PHASE 1: Character Creation ==========
-                // Bots must log in to create characters, then log out for level/item/quest setup
-                bool needsSetup = harness.Level > 1
-                    || (harness.Items?.Count > 0)
-                    || (harness.CompletedQuests?.Count > 0)
-                    || !string.IsNullOrEmpty(harness.RestoreSnapshot);
+                // ========== Create and start bots ==========
+                factory.Log($"Creating {harness.BotCount} bot accounts and characters...");
 
-                factory.Log($"Phase 1: Creating {harness.BotCount} bot accounts and characters...");
-
-                var phase1Bots = new List<BotGame>();
-
-                // Create bots for character creation
                 for (int i = 0; i < harness.BotCount; i++)
                 {
                     ct.ThrowIfCancellationRequested();
 
                     string username = $"{harness.AccountPrefix}{i + 1}";
+                    string botClass = harness.Classes != null && harness.Classes.Count > 0
+                        ? harness.Classes[i % harness.Classes.Count]
+                        : "Warrior";
 
-                    // Create bot via factory (handles RA account creation with fixed password)
+                    // Create bot via factory (handles RA account creation with GM level 2)
                     var bot = factory.CreateTestBot(username, harness, i, startBot: false);
-                    phase1Bots.Add(bot);
+
+                    var result = testRun.AddBot(username, null, botClass); // Character name filled in after login
+                    botResults[bot] = result;
+                    testBots.Add(bot);
                 }
 
-                // Start phase 1 bots with staggered delay to avoid auth server throttling
-                foreach (var bot in phase1Bots)
+                // Start bots with staggered delay to avoid auth server throttling
+                foreach (var bot in testBots)
                 {
                     bot.Start();
-                    await Task.Delay(500, ct); // Small delay between starts
+                    await Task.Delay(500, ct);
                 }
 
-                await WaitForAllBotsLoggedIn(phase1Bots, harness.SetupTimeoutSeconds, ct);
+                await WaitForAllBotsLoggedIn(testBots, harness.SetupTimeoutSeconds, ct);
 
-                // Capture character names before logout
-                for (int i = 0; i < phase1Bots.Count; i++)
+                // Capture character names and update results
+                for (int i = 0; i < testBots.Count; i++)
                 {
-                    characterNames[i] = phase1Bots[i].World.SelectedCharacter?.Name;
-                    if (string.IsNullOrEmpty(characterNames[i]))
+                    var charName = testBots[i].World.SelectedCharacter?.Name;
+                    if (string.IsNullOrEmpty(charName))
                     {
                         throw new InvalidOperationException($"Bot {i} failed to create character");
                     }
+                    botResults[testBots[i]].CharacterName = charName;
                 }
 
-                // If we need to set level/items, must log out first (TrinityCore requirement)
+                factory.Log("All bots logged in. Applying harness setup via GM commands...");
+
+                // ========== Apply harness setup using GM commands (bots stay online) ==========
+                bool needsSetup = harness.Level > 1
+                    || (harness.Items?.Count > 0)
+                    || (harness.CompletedQuests?.Count > 0)
+                    || harness.StartPosition != null;
+
                 if (needsSetup)
                 {
-                    factory.Log("Phase 1 complete. Logging out for character setup...");
+                    factory.Log($"Setup: level={harness.Level}, items={harness.Items?.Count ?? 0}, quests={harness.CompletedQuests?.Count ?? 0}");
 
-                    // Exit all phase 1 bots in parallel (awaitable logout + dispose)
-                    await Task.WhenAll(phase1Bots.Select(bot => bot.Exit()));
-
-                    await Task.Delay(1000, ct); // Brief wait for server to process
-
-                    // ========== CHARACTER SETUP VIA RA ==========
-                    factory.Log($"Setting up characters: level={harness.Level}, items={harness.Items?.Count ?? 0}, quests={harness.CompletedQuests?.Count ?? 0}");
-
-                    foreach (var kvp in characterNames)
-                    {
-                        factory.SetupCharacterViaRA(kvp.Value, harness.Level, harness.Items, harness.CompletedQuests);
-                    }
-
-                    // Restore snapshot if specified (character must be offline)
-                    if (!string.IsNullOrEmpty(harness.RestoreSnapshot) && snapshotManager?.IsAvailable == true)
-                    {
-                        factory.Log($"Restoring snapshot '{harness.RestoreSnapshot}' for all characters...");
-                        foreach (var kvp in characterNames)
-                        {
-                            if (!snapshotManager.RestoreSnapshot(harness.RestoreSnapshot, kvp.Value))
-                            {
-                                factory.Log($"Warning: Failed to restore snapshot for {kvp.Value}");
-                            }
-                        }
-                    }
-
-                    await Task.Delay(500, ct); // Brief wait for RA commands
-
-                    // ========== PHASE 2: Test Execution ==========
-                    factory.Log("Phase 2: Reconnecting bots for test execution...");
-
-                    // Create fresh bot instances for test run
-                    for (int i = 0; i < harness.BotCount; i++)
-                    {
-                        ct.ThrowIfCancellationRequested();
-
-                        string username = $"{harness.AccountPrefix}{i + 1}";
-                        string botClass = harness.Classes != null && harness.Classes.Count > 0
-                            ? harness.Classes[i % harness.Classes.Count]
-                            : "Warrior";
-
-                        var bot = factory.CreateTestBot(username, harness, i, startBot: false);
-
-                        // Tell bot to use existing character (don't delete and recreate)
-                        bot.SetSkipCharacterCreation(true);
-
-                        var result = testRun.AddBot(username, characterNames[i], botClass);
-                        botResults[bot] = result;
-                        testBots.Add(bot);
-                    }
-
-                    // Start phase 2 bots with staggered delay
-                    testRun.Status = TestRunStatus.Running;
                     foreach (var bot in testBots)
                     {
-                        bot.Start();
-                        await Task.Delay(500, ct); // Small delay between starts
+                        bot.ApplyHarnessSetup();
                     }
 
-                    await WaitForAllBotsLoggedIn(testBots, harness.SetupTimeoutSeconds, ct);
+                    // Wait for GM commands to take effect
+                    await Task.Delay(2000, ct);
                 }
-                else
+
+                // Restore snapshot if specified (requires offline - log warning)
+                if (!string.IsNullOrEmpty(harness.RestoreSnapshot) && snapshotManager?.IsAvailable == true)
                 {
-                    // No setup needed - use phase 1 bots directly
-                    factory.Log("No level/item setup needed. Continuing with current bots...");
-                    testRun.Status = TestRunStatus.Running;
-
-                    for (int i = 0; i < phase1Bots.Count; i++)
-                    {
-                        string botClass = harness.Classes != null && harness.Classes.Count > 0
-                            ? harness.Classes[i % harness.Classes.Count]
-                            : "Warrior";
-
-                        var result = testRun.AddBot($"{harness.AccountPrefix}{i + 1}", characterNames[i], botClass);
-                        botResults[phase1Bots[i]] = result;
-                        testBots.Add(phase1Bots[i]);
-                    }
+                    factory.Log($"Warning: Snapshot restore '{harness.RestoreSnapshot}' requires offline characters - skipping in single-phase mode");
+                    // TODO: Could implement logout/restore/login if snapshots are critical
                 }
 
-                // Teleport to start position (bots must be online)
-                if (harness.StartPosition != null)
-                {
-                    factory.Log($"Teleporting bots to start position...");
-                    foreach (var kvp in characterNames)
-                    {
-                        factory.TeleportCharacterViaRA(
-                            kvp.Value,
-                            harness.StartPosition.MapId,
-                            harness.StartPosition.X,
-                            harness.StartPosition.Y,
-                            harness.StartPosition.Z);
-                    }
-                    await Task.Delay(1000, ct); // Wait for teleport
-                }
+                // ========== Start test execution ==========
+                testRun.Status = TestRunStatus.Running;
+                TestRunStatusChanged?.Invoke(this, testRun);
 
-                // Start routes on all bots
                 factory.Log($"Starting route '{route.Name}' on all {testBots.Count} bots");
                 foreach (var bot in testBots)
                 {
                     var result = botResults[bot];
 
-                    // Subscribe to route events
-                    bot.LoadAndStartRoute(routePath);
-                    var executor = bot.GetRouteExecutor();
+                    // Load route and subscribe to events BEFORE starting
+                    // This prevents race conditions where tasks complete before handlers are attached
+                    var executor = bot.LoadRoute(fullRoutePath);
                     if (executor != null)
                     {
                         executor.TaskCompleted += (sender, args) =>
@@ -265,8 +213,14 @@ namespace BotFarm.Testing
                             result.AddLog($"Route completed: {(args.Success ? "SUCCESS" : "FAILED")}");
                             BotCompleted?.Invoke(this, (testRun, result));
                         };
+
+                        // Now start the route after events are subscribed
+                        bot.StartLoadedRoute();
                     }
                 }
+
+                // Send status update now that routes are started
+                TestRunStatusChanged?.Invoke(this, testRun);
 
                 // Wait for completion or timeout
                 var testTimeout = TimeSpan.FromSeconds(harness.TestTimeoutSeconds);
@@ -274,6 +228,7 @@ namespace BotFarm.Testing
 
                 factory.Log($"Waiting for test completion (timeout: {testTimeout.TotalSeconds}s)");
 
+                var lastStatusUpdate = DateTime.UtcNow;
                 while (DateTime.UtcNow < testDeadline)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -282,6 +237,13 @@ namespace BotFarm.Testing
                     if (testRun.BotsCompleted == testBots.Count)
                     {
                         break;
+                    }
+
+                    // Send periodic status updates (every 2 seconds) for duration tracking
+                    if ((DateTime.UtcNow - lastStatusUpdate).TotalSeconds >= 2)
+                    {
+                        TestRunStatusChanged?.Invoke(this, testRun);
+                        lastStatusUpdate = DateTime.UtcNow;
                     }
 
                     await Task.Delay(1000, ct);
@@ -313,7 +275,8 @@ namespace BotFarm.Testing
                         await Task.Delay(1000); // Wait for server to process logout
 
                         // Save snapshot for first character (snapshots are per-character, use first bot as representative)
-                        if (characterNames.TryGetValue(0, out var firstCharName))
+                        var firstCharName = botResults[testBots[0]].CharacterName;
+                        if (!string.IsNullOrEmpty(firstCharName))
                         {
                             if (snapshotManager.SaveSnapshot(harness.SaveSnapshot, firstCharName))
                             {
@@ -405,6 +368,34 @@ namespace BotFarm.Testing
             int final = bots.Count(b => b.LoggedIn);
             if (final < bots.Count)
                 throw new TimeoutException($"Only {final}/{bots.Count} bots logged in within timeout");
+        }
+
+        /// <summary>
+        /// Resolve a route path to its full file system path.
+        /// If the path is already absolute and exists, returns it as-is.
+        /// Otherwise, resolves it relative to the routes directory.
+        /// </summary>
+        private string ResolveRoutePath(string routePath)
+        {
+            // Normalize path separators
+            routePath = routePath.Replace('/', Path.DirectorySeparatorChar);
+
+            // If it's already an absolute path that exists, use it
+            if (Path.IsPathRooted(routePath) && File.Exists(routePath))
+            {
+                return routePath;
+            }
+
+            // Otherwise, resolve relative to the routes directory
+            var routesDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "routes");
+            var fullPath = Path.Combine(routesDirectory, routePath);
+
+            if (!File.Exists(fullPath))
+            {
+                throw new FileNotFoundException($"Route file not found: {routePath}");
+            }
+
+            return fullPath;
         }
     }
 }

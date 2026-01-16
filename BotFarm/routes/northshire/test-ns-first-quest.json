@@ -6,7 +6,7 @@
     "accountPrefix": "test_ns1_",
     "classes": ["Warrior", "Priest", "Paladin"],
     "race": "Human",
-    "level": 2,
+    "level": 1,
     "items": [],
     "setupTimeoutSeconds": 60,
     "testTimeoutSeconds": 90

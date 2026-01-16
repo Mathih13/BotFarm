@@ -72,7 +72,9 @@ namespace BotFarm.AI.Tasks
         // Combat stall detection - re-engage if no damage dealt
         private int lastTargetHealth;
         private DateTime lastHealthChangeTime;
+        private int combatStallCount;
         private const float CombatStallTimeoutSeconds = 6f;
+        private const int MaxCombatStallsBeforeTeleport = 3;
 
         // Object interaction state
         private WorldObject currentObjectTarget;
@@ -376,6 +378,7 @@ namespace BotFarm.AI.Tasks
             // Initialize combat stall tracking
             lastTargetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
             lastHealthChangeTime = DateTime.Now;
+            combatStallCount = 0;
 
             return true;
         }
@@ -528,6 +531,7 @@ namespace BotFarm.AI.Tasks
                 // Initialize combat stall tracking
                 lastTargetHealth = (int)currentTarget[UnitField.UNIT_FIELD_HEALTH];
                 lastHealthChangeTime = DateTime.Now;
+                combatStallCount = 0;
 
                 return TaskResult.Running;
             }
@@ -587,12 +591,43 @@ namespace BotFarm.AI.Tasks
             {
                 lastTargetHealth = targetHealth;
                 lastHealthChangeTime = DateTime.Now;
+                combatStallCount = 0; // Reset stall count on successful damage
             }
 
             // Check for combat stall - no damage dealt for too long
             if ((DateTime.Now - lastHealthChangeTime).TotalSeconds > CombatStallTimeoutSeconds)
             {
-                game.Log($"AdventureTask: Combat stalled for {CombatStallTimeoutSeconds}s, re-engaging target", LogLevel.Warning);
+                combatStallCount++;
+                game.Log($"AdventureTask: Combat stalled for {CombatStallTimeoutSeconds}s (stall #{combatStallCount})", LogLevel.Warning);
+
+                // Check if we've stalled too many times - teleport back to center
+                if (combatStallCount >= MaxCombatStallsBeforeTeleport && centerPosition != null)
+                {
+                    game.Log($"AdventureTask: Too many combat stalls ({combatStallCount}), teleporting to center", LogLevel.Warning);
+
+                    // Stop combat and release target
+                    game.CancelActionsByFlag(ActionFlag.Movement);
+                    game.StopAttack();
+                    combatAI.OnCombatEnd(game);
+
+                    if (claimRegistry != null)
+                    {
+                        claimRegistry.Release(currentTarget.GUID, game.Player.GUID);
+                    }
+                    unpathableTargets.Add(currentTarget.GUID);
+                    currentTarget = null;
+
+                    // Teleport to center
+                    game.TeleportToPosition(
+                        centerPosition.X,
+                        centerPosition.Y,
+                        centerPosition.Z,
+                        (uint)centerPosition.MapID);
+
+                    combatStallCount = 0;
+                    state = AdventureState.Searching;
+                    return TaskResult.Running;
+                }
 
                 // Stop all current actions
                 game.CancelActionsByFlag(ActionFlag.Movement);
@@ -601,11 +636,14 @@ namespace BotFarm.AI.Tasks
                 // Force re-pathfind to target
                 game.MoveTo(currentTarget.GetPosition());
 
+                // Face the target before attacking
+                game.FaceTarget(currentTarget);
+
                 // Restart attack
                 game.StartAttack(currentTarget.GUID);
                 combatAI.OnCombatStart(game, currentTarget);
 
-                // Reset stall tracking
+                // Reset stall timing (but not count)
                 lastHealthChangeTime = DateTime.Now;
                 lastTargetHealth = targetHealth;
             }
@@ -868,29 +906,22 @@ namespace BotFarm.AI.Tasks
 
         private TaskResult HandleReturningToCenter(BotGame game)
         {
-            // Check if we've reached the center
             if (centerPosition == null)
             {
                 state = AdventureState.Searching;
                 return TaskResult.Running;
             }
 
-            float distance = (centerPosition - game.Player.GetPosition()).Length;
-            if (distance <= 5.0f)
-            {
-                game.Log("AdventureTask: Returned to center, resuming search", LogLevel.Info);
-                game.CancelActionsByFlag(ActionFlag.Movement);
-                state = AdventureState.Searching;
-                return TaskResult.Running;
-            }
+            // Teleport directly using GM command - we're in this state because pathfinding failed
+            game.Log("AdventureTask: Teleporting to center position using GM command", LogLevel.Warning);
+            game.TeleportToPosition(
+                centerPosition.X,
+                centerPosition.Y,
+                centerPosition.Z,
+                (uint)centerPosition.MapID);
 
-            // Keep moving to center
-            if ((DateTime.Now - lastMoveUpdate).TotalSeconds > 1.0)
-            {
-                game.MoveTo(centerPosition);
-                lastMoveUpdate = DateTime.Now;
-            }
-
+            // Wait a moment for teleport to complete, then resume searching
+            state = AdventureState.Searching;
             return TaskResult.Running;
         }
 

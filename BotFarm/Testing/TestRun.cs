@@ -7,7 +7,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Status of a test run
     /// </summary>
-    internal enum TestRunStatus
+    public enum TestRunStatus
     {
         Pending,
         SettingUp,
@@ -21,7 +21,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Represents a single test run with one or more bots executing a route
     /// </summary>
-    internal class TestRun
+    public class TestRun
     {
         public string Id { get; }
         public string RoutePath { get; }
@@ -80,10 +80,10 @@ namespace BotFarm.Testing
     /// <summary>
     /// Test results for a single bot within a test run
     /// </summary>
-    internal class BotTestResult
+    public class BotTestResult
     {
         public string BotName { get; }
-        public string CharacterName { get; }
+        public string CharacterName { get; set; }
         public string CharacterClass { get; }
         public bool Success { get; set; }
         public bool IsComplete { get; set; }
@@ -129,7 +129,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Result for a single task within a bot's test
     /// </summary>
-    internal class TaskTestResult
+    public class TaskTestResult
     {
         public string TaskName { get; }
         public TaskResult Result { get; }

@@ -13,17 +13,22 @@ namespace Client.AI.Tasks
     public interface ITask
     {
         string Name { get; }
-        
+
+        /// <summary>
+        /// Error message set when task fails. Used by test framework to report detailed failures.
+        /// </summary>
+        string ErrorMessage { get; }
+
         /// <summary>
         /// Called once when task starts. Return false to fail immediately.
         /// </summary>
         bool Start(AutomatedGame game);
-        
+
         /// <summary>
         /// Called every update tick while task is running.
         /// </summary>
         TaskResult Update(AutomatedGame game);
-        
+
         /// <summary>
         /// Called when task is complete or interrupted.
         /// </summary>
@@ -33,7 +38,12 @@ namespace Client.AI.Tasks
     public abstract class BaseTask : ITask
     {
         public abstract string Name { get; }
-        
+
+        /// <summary>
+        /// Error message to report when task fails. Set this before returning TaskResult.Failed.
+        /// </summary>
+        public string ErrorMessage { get; protected set; }
+
         protected TaskResult currentResult = TaskResult.Running;
 
         // Delay padding to reduce server load

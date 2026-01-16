@@ -2,20 +2,15 @@
   "name": "Northshire - Kobold Combat",
   "description": "Tests Quest 7 'Kobold Camp Cleanup' and Quest 33 combat with Adventure task",
   "harness": {
-    "botCount": 2,
+    "botCount": 3,
     "accountPrefix": "test_ns2_",
-    "classes": ["Warrior", "Priest"],
+    "classes": ["Warrior", "Priest", "Paladin"],
     "race": "Human",
     "level": 1,
     "items": [],
-    "startPosition": {
-      "mapId": 0,
-      "x": -8949.95,
-      "y": -132.493,
-      "z": 83.5312
-    },
+   
     "setupTimeoutSeconds": 60,
-    "testTimeoutSeconds": 300
+    "testTimeoutSeconds": 600
   },
   "loop": false,
   "tasks": [
@@ -29,8 +24,42 @@
     {
       "type": "MoveToNPC",
       "parameters": {
+        "npcEntry": 823,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 823
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 823,
+        "questId": 783
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
         "npcEntry": 197,
         "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 197
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 197,
+        "questId": 783,
+        "rewardChoice": 0
       }
     },
     {
@@ -49,6 +78,26 @@
     {
       "type": "MoveToNPC",
       "parameters": {
+        "npcEntry": 823,
+        "threshold": 4.0
+      }
+    },
+    {
+      "type": "TalkToNPC",
+      "parameters": {
+        "npcEntry": 823
+      }
+    },
+    {
+      "type": "AcceptQuest",
+      "parameters": {
+        "npcEntry": 823,
+        "questId": 5261
+      }
+    },
+    {
+      "type": "MoveToNPC",
+      "parameters": {
         "npcEntry": 196,
         "threshold": 4.0
       }
@@ -57,6 +106,13 @@
       "type": "TalkToNPC",
       "parameters": {
         "npcEntry": 196
+      }
+    },
+    {
+      "type": "TurnInQuest",
+      "parameters": {
+        "npcEntry": 196,
+        "questId": 5261
       }
     },
     {
@@ -76,7 +132,7 @@
     {
       "type": "Adventure",
       "parameters": {
-        "targetEntries": [6, 299, 257],
+        "targetEntries": [ 6, 299, 257 ],
         "killRequirements": [
           {
             "entry": 6,

@@ -287,5 +287,29 @@ namespace BotFarm.Properties {
                 this["MySQLCharactersDB"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool EnableWebUI {
+            get {
+                return ((bool)(this["EnableWebUI"]));
+            }
+            set {
+                this["EnableWebUI"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("5000")]
+        public int WebUIPort {
+            get {
+                return ((int)(this["WebUIPort"]));
+            }
+            set {
+                this["WebUIPort"] = value;
+            }
+        }
     }
 }

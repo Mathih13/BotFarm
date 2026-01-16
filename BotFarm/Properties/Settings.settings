@@ -90,5 +90,11 @@
     <Setting Name="MySQLCharactersDB" Type="System.String" Scope="User">
       <Value Profile="(Default)">characters</Value>
     </Setting>
+    <Setting Name="EnableWebUI" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="WebUIPort" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">5000</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

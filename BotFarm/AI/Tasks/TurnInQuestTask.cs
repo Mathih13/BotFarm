@@ -164,7 +164,8 @@ namespace BotFarm.AI.Tasks
         {
             if (!game.Player.IsAlive)
             {
-                game.Log($"TurnInQuestTask: Player is dead", LogLevel.Warning);
+                ErrorMessage = "Player is dead";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             
@@ -179,7 +180,8 @@ namespace BotFarm.AI.Tasks
                 }
                 else
                 {
-                    game.Log($"TurnInQuestTask: No pending quest turn-in available", LogLevel.Warning);
+                    ErrorMessage = "No pending quest turn-in available";
+                    game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
                     return TaskResult.Failed;
                 }
             }
@@ -187,7 +189,8 @@ namespace BotFarm.AI.Tasks
             // Turning in a specific quest to a specific NPC
             if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
             {
-                game.Log($"TurnInQuestTask: NPC is no longer visible", LogLevel.Error);
+                ErrorMessage = "NPC is no longer visible";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Error);
                 return TaskResult.Failed;
             }
             
@@ -239,7 +242,8 @@ namespace BotFarm.AI.Tasks
                 // Check timeout
                 if ((DateTime.Now - actionTime).TotalSeconds > timeoutSeconds)
                 {
-                    game.Log($"TurnInQuestTask: Timeout waiting for quest turn-in", LogLevel.Warning);
+                    ErrorMessage = "Timeout waiting for quest turn-in";
+                    game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
                     return TaskResult.Failed;
                 }
             }

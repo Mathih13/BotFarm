@@ -807,6 +807,55 @@ namespace Client
                 DoSayChat("Cast spellid " + spellid);
         }
 
+        #region GM Commands (require GM level 2+)
+
+        /// <summary>
+        /// Teleport self to coordinates using GM command (requires GM level 2+)
+        /// Uses .go xyz which takes coordinates directly, unlike .tele which requires named locations
+        /// </summary>
+        public void TeleportToPosition(float x, float y, float z, uint mapId)
+        {
+            // Use invariant culture formatting to ensure decimal point (not comma)
+            DoSayChat(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                ".go xyz {0} {1} {2} {3}", x, y, z, mapId));
+        }
+
+        /// <summary>
+        /// Add item to inventory using GM command (requires GM level 2+)
+        /// </summary>
+        public void AddItem(uint itemEntry, int count = 1)
+        {
+            DoSayChat($".additem {itemEntry} {count}");
+        }
+
+        /// <summary>
+        /// Level up by specified number of levels using GM command (requires GM level 2+)
+        /// Note: .levelup is RELATIVE - it adds levels, doesn't set absolute level
+        /// </summary>
+        public void LevelUp(int levels)
+        {
+            if (levels > 0)
+                DoSayChat($".levelup {levels}");
+        }
+
+        /// <summary>
+        /// Add quest to quest log using GM command (requires GM level 2+)
+        /// </summary>
+        public void AddQuest(uint questId)
+        {
+            DoSayChat($".quest add {questId}");
+        }
+
+        /// <summary>
+        /// Complete quest using GM command (requires GM level 2+)
+        /// </summary>
+        public void CompleteQuest(uint questId)
+        {
+            DoSayChat($".quest complete {questId}");
+        }
+
+        #endregion
+
         #endregion
 
         #region Actions
@@ -1287,6 +1336,90 @@ namespace Client
             var newSpeed = packet.ReadSingle();
 
             var ack = new MovementPacket(WorldCommand.CMSG_FORCE_SWIM_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_RUN_BACK_SPEED_CHANGE)]
+        protected void HandleForceRunBackSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_RUN_BACK_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_SWIM_BACK_SPEED_CHANGE)]
+        protected void HandleForceSwimBackSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_SWIM_BACK_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_FLIGHT_SPEED_CHANGE)]
+        protected void HandleForceFlightSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_FLIGHT_SPEED_CHANGE_ACK)
+            {
+                GUID = Player.GUID,
+                flags = MovementFlags.MOVEMENTFLAG_NONE,
+                X = Player.X,
+                Y = Player.Y,
+                Z = Player.Z,
+                O = Player.O
+            };
+            ack.Write(counter);
+            ack.Write(newSpeed);
+            SendPacket(ack);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE)]
+        protected void HandleForceFlightBackSpeedChange(InPacket packet)
+        {
+            var guid = packet.ReadPackedGuid();
+            var counter = packet.ReadUInt32();
+            var newSpeed = packet.ReadSingle();
+
+            var ack = new MovementPacket(WorldCommand.CMSG_FORCE_FLIGHT_BACK_SPEED_CHANGE_ACK)
             {
                 GUID = Player.GUID,
                 flags = MovementFlags.MOVEMENTFLAG_NONE,
