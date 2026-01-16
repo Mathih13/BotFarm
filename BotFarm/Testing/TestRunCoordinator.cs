@@ -196,9 +196,9 @@ namespace BotFarm.Testing
                 {
                     var result = botResults[bot];
 
-                    // Subscribe to route events
-                    bot.LoadAndStartRoute(fullRoutePath);
-                    var executor = bot.GetRouteExecutor();
+                    // Load route and subscribe to events BEFORE starting
+                    // This prevents race conditions where tasks complete before handlers are attached
+                    var executor = bot.LoadRoute(fullRoutePath);
                     if (executor != null)
                     {
                         executor.TaskCompleted += (sender, args) =>
@@ -213,6 +213,9 @@ namespace BotFarm.Testing
                             result.AddLog($"Route completed: {(args.Success ? "SUCCESS" : "FAILED")}");
                             BotCompleted?.Invoke(this, (testRun, result));
                         };
+
+                        // Now start the route after events are subscribed
+                        bot.StartLoadedRoute();
                     }
                 }
 

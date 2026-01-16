@@ -682,6 +682,62 @@ namespace BotFarm
             }
         }
 
+        /// <summary>
+        /// Load a route and create the executor, but don't start it yet.
+        /// Use this when you need to subscribe to events before the route begins.
+        /// Call StartLoadedRoute() after subscribing to events.
+        /// </summary>
+        /// <returns>The executor to subscribe to, or null if load failed</returns>
+        public TaskExecutorAI LoadRoute(string routePath)
+        {
+            try
+            {
+                Log($"Loading task route from: {routePath}", LogLevel.Info);
+                var route = TaskRouteLoader.LoadFromJson(routePath);
+                if (route == null)
+                {
+                    Log("Failed to load route: null result", LogLevel.Error);
+                    return null;
+                }
+
+                // Stop current route if any
+                StopRoute();
+
+                // Create the executor but don't push it yet
+                currentRouteExecutor = new TaskExecutorAI(route);
+                return currentRouteExecutor;
+            }
+            catch (Exception ex)
+            {
+                LogException($"Failed to load route from {routePath}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Start a previously loaded route. Call this after subscribing to events on the executor.
+        /// </summary>
+        public bool StartLoadedRoute()
+        {
+            if (currentRouteExecutor == null)
+            {
+                Log("No route loaded to start", LogLevel.Error);
+                return false;
+            }
+
+            if (PushStrategicAI(currentRouteExecutor))
+            {
+                Log($"Started route: {currentRouteExecutor.Route.Name}", LogLevel.Info);
+                return true;
+            }
+            else
+            {
+                Log($"Failed to start route: {currentRouteExecutor.Route.Name}", LogLevel.Error);
+                currentRouteExecutor = null;
+                return false;
+            }
+        }
+
         public bool StartRoute(TaskRoute route)
         {
             if (route == null)
