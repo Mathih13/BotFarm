@@ -336,12 +336,13 @@ namespace BotFarm
                 }
             }
 
-            // Complete prerequisite quests
+            // Complete prerequisite quests (add then complete to handle quests not in log)
             if (harnessSettings.CompletedQuests != null && harnessSettings.CompletedQuests.Count > 0)
             {
                 foreach (var questId in harnessSettings.CompletedQuests)
                 {
-                    Log($"Completing quest {questId}");
+                    Log($"Adding and completing quest {questId}");
+                    AddQuest(questId);
                     CompleteQuest(questId);
                 }
             }
