@@ -48,12 +48,14 @@ function TestDetail() {
   useTestRunEvents({
     onTestRunStatus: (run) => {
       if (run.id === testId) {
-        setTest(run)
+        // Merge status update with existing state to preserve botResults
+        setTest((prev) => prev ? { ...prev, ...run, botResults: run.botResults || prev.botResults } : run)
       }
     },
     onTestRunCompleted: (run) => {
       if (run.id === testId) {
-        setTest(run)
+        // Merge completed update with existing state to preserve botResults
+        setTest((prev) => prev ? { ...prev, ...run, botResults: run.botResults || prev.botResults } : run)
       }
     },
     onBotCompleted: (runId, bot) => {
@@ -271,6 +273,38 @@ function BotResultRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(bot.durationSeconds)
+
+  // Update elapsed time for running bots
+  useEffect(() => {
+    if (bot.isComplete) {
+      setElapsedSeconds(bot.durationSeconds)
+      return
+    }
+
+    // If no startTime available, just use durationSeconds
+    if (!bot.startTime) {
+      setElapsedSeconds(bot.durationSeconds)
+      return
+    }
+
+    // Calculate initial elapsed time from start time
+    const startTime = new Date(bot.startTime).getTime()
+    if (isNaN(startTime)) {
+      setElapsedSeconds(bot.durationSeconds)
+      return
+    }
+
+    const updateElapsed = () => {
+      const now = Date.now()
+      setElapsedSeconds((now - startTime) / 1000)
+    }
+    updateElapsed()
+
+    const interval = setInterval(updateElapsed, 1000)
+    return () => clearInterval(interval)
+  }, [bot.isComplete, bot.startTime, bot.durationSeconds])
+
   const taskProgress =
     bot.totalTasks > 0
       ? ((bot.tasksCompleted + bot.tasksFailed + bot.tasksSkipped) / bot.totalTasks) * 100
@@ -297,7 +331,7 @@ function BotResultRow({
           </div>
           <div className="flex items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              {formatDuration(bot.durationSeconds)}
+              {formatDuration(elapsedSeconds)}
             </div>
             <div className="flex items-center gap-2">
               <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">

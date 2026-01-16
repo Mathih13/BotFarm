@@ -43,6 +43,7 @@ export interface ApiBotResult {
   characterClass: string;
   success: boolean;
   isComplete: boolean;
+  startTime: string;
   durationSeconds: number;
   errorMessage: string | null;
   tasksCompleted: number;

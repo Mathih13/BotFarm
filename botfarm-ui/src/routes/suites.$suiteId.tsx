@@ -54,12 +54,14 @@ function SuiteDetail() {
   useSuiteEvents({
     onSuiteStatus: (s) => {
       if (s.id === suiteId) {
-        setSuite(s)
+        // Merge status update with existing state to preserve testRuns
+        setSuite((prev) => prev ? { ...prev, ...s, testRuns: s.testRuns || prev.testRuns } : s)
       }
     },
     onSuiteCompleted: (s) => {
       if (s.id === suiteId) {
-        setSuite(s)
+        // Merge completed update with existing state to preserve testRuns
+        setSuite((prev) => prev ? { ...prev, ...s, testRuns: s.testRuns || prev.testRuns } : s)
       }
     },
     onSuiteTestCompleted: (sId, test) => {
