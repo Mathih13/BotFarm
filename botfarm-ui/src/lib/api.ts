@@ -6,6 +6,7 @@ import type {
   ApiSuiteInfo,
   StartTestRequest,
   StartSuiteRequest,
+  ApiLogsResponse,
 } from './types';
 
 // Use absolute URL in development, relative path in production
@@ -74,4 +75,17 @@ export const routesApi = {
   getAll: () => fetchApi<ApiRouteInfo[]>('/routes'),
   getSuites: () => fetchApi<ApiSuiteInfo[]>('/routes/suites'),
   getByPath: (path: string) => fetchApi<unknown>(`/routes/${path}`),
+};
+
+// Logs API
+export const logsApi = {
+  getLogs: (params: { count?: number; filter?: string; since?: string; minLevel?: string } = {}) => {
+    const searchParams = new URLSearchParams();
+    if (params.count) searchParams.set('count', params.count.toString());
+    if (params.filter) searchParams.set('filter', params.filter);
+    if (params.since) searchParams.set('since', params.since);
+    if (params.minLevel) searchParams.set('minLevel', params.minLevel);
+    const query = searchParams.toString();
+    return fetchApi<ApiLogsResponse>(`/logs${query ? `?${query}` : ''}`);
+  },
 };

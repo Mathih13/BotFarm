@@ -16,6 +16,7 @@ using System.Xml.Serialization;
 using Client.AI.Tasks;
 using BotFarm.Testing;
 using BotFarm.Web;
+using BotFarm.Web.Services;
 
 namespace BotFarm
 {
@@ -41,6 +42,11 @@ namespace BotFarm
         TestSuiteCoordinator suiteCoordinator;
         SnapshotManager snapshotManager;
         WebApiHost webApiHost;
+
+        /// <summary>
+        /// In-memory buffer for log entries, accessible via Web API
+        /// </summary>
+        public LogBuffer Logs { get; } = new LogBuffer(maxEntries: 10000);
 
         public BotFactory()
         {
@@ -999,6 +1005,9 @@ namespace BotFarm
                     Console.WriteLine(message);
                     logger.WriteLine(message);
                 }
+
+                // Always add to log buffer for Web API access
+                Logs.Add(message, level);
             }
             catch
             {

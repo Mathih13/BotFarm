@@ -250,4 +250,20 @@ namespace BotFarm.Web.Models
         public string Name { get; set; }
         public int TestCount { get; set; }
     }
+
+    // ============ Log Models ============
+
+    public class ApiLogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; }
+        public string Level { get; set; }
+    }
+
+    public class ApiLogsResponse
+    {
+        public List<ApiLogEntry> Logs { get; set; }
+        public int TotalCount { get; set; }
+        public int FilteredCount { get; set; }
+    }
 }

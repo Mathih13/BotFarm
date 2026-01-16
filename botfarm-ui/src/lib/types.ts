@@ -111,3 +111,16 @@ export interface StartSuiteRequest {
   suitePath: string;
   parallel: boolean;
 }
+
+// Log API Types
+export interface ApiLogEntry {
+  timestamp: string;
+  message: string;
+  level: string;
+}
+
+export interface ApiLogsResponse {
+  logs: ApiLogEntry[];
+  totalCount: number;
+  filteredCount: number;
+}

@@ -55,6 +55,7 @@ namespace BotFarm.Web
 
             // Register singletons
             builder.Services.AddSingleton(factory);
+            builder.Services.AddSingleton(factory.Logs);
             builder.Services.AddSingleton(testCoordinator);
             builder.Services.AddSingleton(suiteCoordinator);
             builder.Services.AddSingleton<TestEventBroadcaster>();

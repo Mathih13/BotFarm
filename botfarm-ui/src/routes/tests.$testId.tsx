@@ -8,6 +8,7 @@ import { Button } from '~/components/ui/button'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Progress } from '~/components/ui/progress'
+import { RawLogsDialog } from '~/components/RawLogsDialog'
 
 export const Route = createFileRoute('/tests/$testId')({
   component: TestDetail,
@@ -274,6 +275,7 @@ function BotResultRow({
   onToggle: () => void
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(bot.durationSeconds)
+  const [rawLogsOpen, setRawLogsOpen] = useState(false)
 
   // Update elapsed time for running bots
   useEffect(() => {
@@ -373,7 +375,19 @@ function BotResultRow({
           {/* Logs */}
           {bot.logs && bot.logs.length > 0 && (
             <div className="ml-6 mt-4">
-              <h4 className="text-sm font-medium mb-2">Logs</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium">Logs</h4>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setRawLogsOpen(true)
+                  }}
+                >
+                  View Raw Logs
+                </Button>
+              </div>
               <div className="bg-zinc-900 rounded p-3 max-h-48 overflow-y-auto">
                 {bot.logs.map((log, idx) => (
                   <div key={idx} className="text-xs text-zinc-300 font-mono">
@@ -383,8 +397,32 @@ function BotResultRow({
               </div>
             </div>
           )}
+
+          {/* Show View Raw Logs button even if no inline logs */}
+          {(!bot.logs || bot.logs.length === 0) && (
+            <div className="ml-6 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setRawLogsOpen(true)
+                }}
+              >
+                View Raw Logs
+              </Button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Raw Logs Dialog */}
+      <RawLogsDialog
+        open={rawLogsOpen}
+        onOpenChange={setRawLogsOpen}
+        botName={bot.botName}
+        characterName={bot.characterName}
+      />
     </div>
   )
 }
