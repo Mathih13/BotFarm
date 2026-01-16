@@ -44,7 +44,6 @@ function SuitesIndex() {
   const [showNewSuite, setShowNewSuite] = useState(false)
   const [selectedSuite, setSelectedSuite] = useState<string>('')
   const [parallel, setParallel] = useState(false)
-  const [starting, setStarting] = useState(false)
 
   // Load initial data
   useEffect(() => {
@@ -85,20 +84,18 @@ function SuitesIndex() {
     return true
   })
 
-  const handleStartSuite = async () => {
+  const handleStartSuite = () => {
     if (!selectedSuite) return
-    setStarting(true)
-    try {
-      const newSuite = await suitesApi.start({ suitePath: selectedSuite, parallel })
-      setSuites((prev) => [newSuite, ...prev])
-      setShowNewSuite(false)
-      setSelectedSuite('')
-      setParallel(false)
-    } catch (err) {
+    // Close dialog immediately - SignalR will show the suite when it starts
+    setShowNewSuite(false)
+    const suitePath = selectedSuite
+    const parallelMode = parallel
+    setSelectedSuite('')
+    setParallel(false)
+    // Fire and forget - errors will show in the main error banner
+    suitesApi.start({ suitePath, parallel: parallelMode }).catch((err) => {
       setError(err instanceof Error ? err.message : 'Failed to start suite')
-    } finally {
-      setStarting(false)
-    }
+    })
   }
 
   const handleStopSuite = async (suiteId: string, e: React.MouseEvent) => {
@@ -202,9 +199,9 @@ function SuitesIndex() {
             </Button>
             <Button
               onClick={handleStartSuite}
-              disabled={!selectedSuite || starting}
+              disabled={!selectedSuite}
             >
-              {starting ? 'Starting...' : 'Start Suite'}
+              Start Suite
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -42,7 +42,6 @@ function TestsIndex() {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all')
   const [showNewTest, setShowNewTest] = useState(false)
   const [selectedRoute, setSelectedRoute] = useState<string>('')
-  const [starting, setStarting] = useState(false)
 
   // Load initial data
   useEffect(() => {
@@ -83,20 +82,16 @@ function TestsIndex() {
     return true
   })
 
-  const handleStartTest = async () => {
+  const handleStartTest = () => {
     if (!selectedRoute) return
-    setStarting(true)
-    try {
-      const newTest = await testsApi.start({ routePath: selectedRoute })
-      // Filter out any existing test with same ID to prevent duplicates from SignalR race
-      setTests((prev) => [newTest, ...prev.filter((r) => r.id !== newTest.id)])
-      setShowNewTest(false)
-      setSelectedRoute('')
-    } catch (err) {
+    // Close dialog immediately - SignalR will show the test when it starts
+    setShowNewTest(false)
+    const routePath = selectedRoute
+    setSelectedRoute('')
+    // Fire and forget - errors will show in the main error banner
+    testsApi.start({ routePath }).catch((err) => {
       setError(err instanceof Error ? err.message : 'Failed to start test')
-    } finally {
-      setStarting(false)
-    }
+    })
   }
 
   const handleStopTest = async (testId: string, e: React.MouseEvent) => {
@@ -200,9 +195,9 @@ function TestsIndex() {
             </Button>
             <Button
               onClick={handleStartTest}
-              disabled={!selectedRoute || starting}
+              disabled={!selectedRoute}
             >
-              {starting ? 'Starting...' : 'Start Test'}
+              Start Test
             </Button>
           </DialogFooter>
         </DialogContent>
