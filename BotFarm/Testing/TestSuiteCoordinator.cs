@@ -11,7 +11,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Coordinates test suite execution with dependency management and parallel execution support
     /// </summary>
-    internal class TestSuiteCoordinator
+    public class TestSuiteCoordinator
     {
         private readonly BotFactory factory;
         private readonly TestRunCoordinator testCoordinator;
@@ -103,8 +103,11 @@ namespace BotFarm.Testing
         /// <param name="ct">Cancellation token</param>
         public async Task<TestSuiteRun> StartSuiteRunAsync(string suitePath, bool parallel = false, CancellationToken ct = default)
         {
+            // Resolve the suite path to an absolute path
+            var resolvedPath = ResolveSuitePath(suitePath);
+
             // Load and validate suite
-            var suite = LoadSuite(suitePath);
+            var suite = LoadSuite(resolvedPath);
             var errors = suite.Validate();
             if (errors.Count > 0)
             {
@@ -112,9 +115,9 @@ namespace BotFarm.Testing
             }
 
             // Resolve route paths relative to suite file
-            string suiteDir = Path.GetDirectoryName(Path.GetFullPath(suitePath));
+            string suiteDir = Path.GetDirectoryName(resolvedPath);
 
-            var suiteRun = new TestSuiteRun(suitePath, suite.Name, parallel)
+            var suiteRun = new TestSuiteRun(resolvedPath, suite.Name, parallel)
             {
                 Status = TestSuiteRunStatus.Running,
                 TotalTests = suite.Tests.Count
@@ -310,6 +313,46 @@ namespace BotFarm.Testing
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Resolve a suite path to its full file system path.
+        /// Searches in routes/suites/, routes/, and current directory.
+        /// </summary>
+        private string ResolveSuitePath(string suitePath)
+        {
+            // Normalize path separators
+            suitePath = suitePath.Replace('/', Path.DirectorySeparatorChar);
+
+            // If it's already an absolute path that exists, use it
+            if (Path.IsPathRooted(suitePath) && File.Exists(suitePath))
+            {
+                return suitePath;
+            }
+
+            var routesDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "routes");
+
+            // Try routes/suites/ directory first
+            var suitesPath = Path.Combine(routesDirectory, "suites", suitePath);
+            if (File.Exists(suitesPath))
+            {
+                return Path.GetFullPath(suitesPath);
+            }
+
+            // Try routes/ directory
+            var routesPath = Path.Combine(routesDirectory, suitePath);
+            if (File.Exists(routesPath))
+            {
+                return Path.GetFullPath(routesPath);
+            }
+
+            // Try current directory
+            if (File.Exists(suitePath))
+            {
+                return Path.GetFullPath(suitePath);
+            }
+
+            throw new FileNotFoundException($"Suite file not found: {suitePath}");
         }
 
         private string ResolveRoutePath(string route, string suiteDir)

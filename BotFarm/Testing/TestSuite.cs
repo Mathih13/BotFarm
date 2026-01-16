@@ -7,7 +7,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Status of a test suite run
     /// </summary>
-    internal enum TestSuiteRunStatus
+    public enum TestSuiteRunStatus
     {
         Pending,
         Running,
@@ -19,7 +19,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Defines a test suite loaded from JSON
     /// </summary>
-    internal class TestSuite
+    public class TestSuite
     {
         public string Name { get; set; }
         public List<TestSuiteEntry> Tests { get; set; } = new List<TestSuiteEntry>();
@@ -161,7 +161,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// A single test entry within a test suite
     /// </summary>
-    internal class TestSuiteEntry
+    public class TestSuiteEntry
     {
         public string Route { get; set; }
         public List<string> DependsOn { get; set; }
@@ -175,7 +175,7 @@ namespace BotFarm.Testing
     /// <summary>
     /// Represents a running or completed test suite execution
     /// </summary>
-    internal class TestSuiteRun
+    public class TestSuiteRun
     {
         public string Id { get; }
         public string SuiteName { get; }

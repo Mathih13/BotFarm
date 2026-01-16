@@ -156,7 +156,8 @@ namespace BotFarm.AI.Tasks
         {
             if (!game.Player.IsAlive)
             {
-                game.Log($"AcceptQuestTask: Player is dead", LogLevel.Warning);
+                ErrorMessage = "Player is dead";
+                game.Log($"AcceptQuestTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             
@@ -171,7 +172,8 @@ namespace BotFarm.AI.Tasks
                 }
                 else
                 {
-                    game.Log($"AcceptQuestTask: No pending quest offer available", LogLevel.Warning);
+                    ErrorMessage = "No pending quest offer available";
+                    game.Log($"AcceptQuestTask: {ErrorMessage}", LogLevel.Warning);
                     return TaskResult.Failed;
                 }
             }
@@ -179,7 +181,8 @@ namespace BotFarm.AI.Tasks
             // Accepting a specific quest from a specific NPC
             if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
             {
-                game.Log($"AcceptQuestTask: NPC is no longer visible", LogLevel.Error);
+                ErrorMessage = "NPC is no longer visible";
+                game.Log($"AcceptQuestTask: {ErrorMessage}", LogLevel.Error);
                 return TaskResult.Failed;
             }
             
@@ -207,7 +210,8 @@ namespace BotFarm.AI.Tasks
                 // Check timeout
                 if ((DateTime.Now - queryTime).TotalSeconds > timeoutSeconds)
                 {
-                    game.Log($"AcceptQuestTask: Timeout waiting for quest details", LogLevel.Warning);
+                    ErrorMessage = "Timeout waiting for quest details";
+                    game.Log($"AcceptQuestTask: {ErrorMessage}", LogLevel.Warning);
                     return TaskResult.Failed;
                 }
             }

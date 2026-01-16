@@ -109,13 +109,15 @@ namespace BotFarm.AI.Tasks
         {
             if (!game.Player.IsAlive)
             {
-                game.Log($"TalkToNPCTask: Player is dead", LogLevel.Warning);
+                ErrorMessage = "Player is dead";
+                game.Log($"TalkToNPCTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             
             if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
             {
-                game.Log($"TalkToNPCTask: NPC {npcEntry} is no longer visible", LogLevel.Error);
+                ErrorMessage = $"NPC {npcEntry} is no longer visible";
+                game.Log($"TalkToNPCTask: {ErrorMessage}", LogLevel.Error);
                 return TaskResult.Failed;
             }
             
@@ -123,7 +125,8 @@ namespace BotFarm.AI.Tasks
             
             if (distance > interactionRange)
             {
-                game.Log($"TalkToNPCTask: Too far from NPC (distance: {distance:F2}m), need to be within {interactionRange}m", LogLevel.Warning);
+                ErrorMessage = $"Too far from NPC (distance: {distance:F2}m), need to be within {interactionRange}m";
+                game.Log($"TalkToNPCTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
             
