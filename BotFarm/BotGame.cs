@@ -20,7 +20,7 @@ using BotFarm.AI.Tasks;
 
 namespace BotFarm
 {
-    class BotGame : AutomatedGame
+    public class BotGame : AutomatedGame
     {
         // Static counter for round-robin class distribution
         private static int classDistributionCounter = 0;
@@ -37,9 +37,6 @@ namespace BotFarm
 
         // Track if we've already created a fresh character this session
         private bool hasCreatedFreshCharacter = false;
-
-        // Skip character creation/deletion - use existing character (for Phase 2 of test runs)
-        private bool skipCharacterCreation = false;
 
         // Harness settings for test framework
         private HarnessSettings harnessSettings = null;
@@ -253,14 +250,6 @@ namespace BotFarm
                 return;
             }
 
-            // If skipCharacterCreation is set (Phase 2 of test run), just log in with existing character
-            if (skipCharacterCreation && characterList.Length > 0)
-            {
-                Log($"Using existing character (Phase 2): {characterList[0].Name}");
-                base.PresentCharacterList(characterList);
-                return;
-            }
-
             // Delete all existing characters before creating a new one
             Log($"Found {characterList.Length} existing character(s), deleting all to create fresh");
 
@@ -316,16 +305,59 @@ namespace BotFarm
         }
 
         /// <summary>
-        /// Set to true to skip character deletion/creation and just log in with existing character.
-        /// Used for Phase 2 of test runs after character setup via RA.
+        /// Apply harness setup using GM commands (requires GM level 2).
+        /// Called after bot is logged in to set level, add items, complete quests, and teleport.
         /// </summary>
-        public void SetSkipCharacterCreation(bool skip)
+        public void ApplyHarnessSetup()
         {
-            this.skipCharacterCreation = skip;
-            if (skip)
+            if (harnessSettings == null)
             {
-                Log("Skip character creation enabled - will use existing character");
+                Log("No harness settings to apply", LogLevel.Warning);
+                return;
             }
+
+            Log($"Applying harness setup via GM commands...");
+
+            // Level up (relative, so level 1->10 needs .levelup 9)
+            if (harnessSettings.Level > 1)
+            {
+                int levelsToAdd = harnessSettings.Level - 1;
+                Log($"Leveling up by {levelsToAdd} levels (to level {harnessSettings.Level})");
+                LevelUp(levelsToAdd);
+            }
+
+            // Add items
+            if (harnessSettings.Items != null && harnessSettings.Items.Count > 0)
+            {
+                foreach (var item in harnessSettings.Items)
+                {
+                    Log($"Adding item {item.Entry} x{item.Count}");
+                    AddItem(item.Entry, item.Count);
+                }
+            }
+
+            // Complete prerequisite quests
+            if (harnessSettings.CompletedQuests != null && harnessSettings.CompletedQuests.Count > 0)
+            {
+                foreach (var questId in harnessSettings.CompletedQuests)
+                {
+                    Log($"Completing quest {questId}");
+                    CompleteQuest(questId);
+                }
+            }
+
+            // Teleport to start position
+            if (harnessSettings.StartPosition != null)
+            {
+                Log($"Teleporting to start position: ({harnessSettings.StartPosition.X}, {harnessSettings.StartPosition.Y}, {harnessSettings.StartPosition.Z}) on map {harnessSettings.StartPosition.MapId}");
+                TeleportToPosition(
+                    harnessSettings.StartPosition.X,
+                    harnessSettings.StartPosition.Y,
+                    harnessSettings.StartPosition.Z,
+                    harnessSettings.StartPosition.MapId);
+            }
+
+            Log("Harness setup complete");
         }
 
         private void CreateRandomCharacter()
