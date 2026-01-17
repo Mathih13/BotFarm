@@ -124,3 +124,196 @@ export interface ApiLogsResponse {
   totalCount: number;
   filteredCount: number;
 }
+
+// ============ Route Detail Types ============
+
+export interface ApiRouteDetail {
+  path: string;
+  name: string;
+  description: string | null;
+  loop: boolean;
+  harness: ApiHarnessSettings | null;
+  tasks: ApiTaskInfo[];
+  rawJson: string;
+}
+
+export interface ApiHarnessSettings {
+  botCount: number;
+  accountPrefix: string;
+  classes: string[];
+  race: string;
+  level: number;
+  setupTimeoutSeconds: number;
+  testTimeoutSeconds: number;
+  startPosition: ApiStartPosition | null;
+}
+
+export interface ApiStartPosition {
+  mapId: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ApiTaskInfo {
+  type: string;
+  parameters: Record<string, unknown>;
+}
+
+// ============ Route Editor Request Types ============
+
+export interface CreateRouteRequest {
+  path: string;
+  content: string;
+}
+
+export interface UpdateRouteRequest {
+  content: string;
+}
+
+// ============ Route Editor Form Types ============
+
+export interface RouteFormData {
+  name: string;
+  description: string;
+  loop: boolean;
+  harness: HarnessFormData | null;
+  tasks: TaskFormData[];
+}
+
+export interface HarnessFormData {
+  botCount: number;
+  accountPrefix: string;
+  classes: string[];
+  race: string;
+  level: number;
+  items: ItemRequirement[];
+  completedQuests: number[];
+  startPosition: PositionData | null;
+  setupTimeoutSeconds: number;
+  testTimeoutSeconds: number;
+}
+
+export interface PositionData {
+  mapId: number;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ItemRequirement {
+  entry: number;
+  count: number;
+}
+
+export interface TaskFormData {
+  id: string;
+  type: TaskType;
+  parameters: Record<string, unknown>;
+}
+
+export type TaskType =
+  | 'Wait'
+  | 'LogMessage'
+  | 'MoveToLocation'
+  | 'MoveToNPC'
+  | 'TalkToNPC'
+  | 'AcceptQuest'
+  | 'TurnInQuest'
+  | 'KillMobs'
+  | 'UseObject'
+  | 'Adventure'
+  | 'LearnSpells'
+  | 'AssertQuestInLog'
+  | 'AssertQuestNotInLog'
+  | 'AssertHasItem'
+  | 'AssertLevel';
+
+// Kill requirements and collect items
+export interface KillRequirement {
+  entry: number;
+  count: number;
+}
+
+export interface CollectItem {
+  itemEntry: number;
+  count: number;
+  droppedBy?: number | number[];
+}
+
+export interface ObjectRequirement {
+  entry: number;
+  count: number;
+}
+
+// Class maps for class-specific overrides
+export type ClassMap<T> = Partial<Record<PlayerClass, T>>;
+
+export type PlayerClass =
+  | 'Warrior'
+  | 'Paladin'
+  | 'Hunter'
+  | 'Rogue'
+  | 'Priest'
+  | 'DeathKnight'
+  | 'Shaman'
+  | 'Mage'
+  | 'Warlock'
+  | 'Druid';
+
+export const PLAYER_CLASSES: PlayerClass[] = [
+  'Warrior',
+  'Paladin',
+  'Hunter',
+  'Rogue',
+  'Priest',
+  'DeathKnight',
+  'Shaman',
+  'Mage',
+  'Warlock',
+  'Druid',
+];
+
+export const PLAYER_RACES = [
+  'Human',
+  'Dwarf',
+  'NightElf',
+  'Gnome',
+  'Orc',
+  'Undead',
+  'Tauren',
+  'Troll',
+  'BloodElf',
+  'Draenei',
+] as const;
+
+export type PlayerRace = (typeof PLAYER_RACES)[number];
+
+// ============ Entity Lookup Types ============
+
+export interface EntityLookupRequest {
+  npcEntries?: number[];
+  questIds?: number[];
+  itemEntries?: number[];
+  objectEntries?: number[];
+}
+
+export interface EntityLookupResponse {
+  npcs: Record<number, string>;
+  quests: Record<number, string>;
+  items: Record<number, string>;
+  objects: Record<number, string>;
+}
+
+export type EntityType = 'npc' | 'quest' | 'item' | 'object';
+
+// ============ Entity Search Types ============
+
+export interface EntitySearchResult {
+  entry: number;
+  name: string;
+}
+
+export interface EntitySearchResponse {
+  results: EntitySearchResult[];
+}
