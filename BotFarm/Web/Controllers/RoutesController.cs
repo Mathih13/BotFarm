@@ -99,6 +99,182 @@ namespace BotFarm.Web.Controllers
         }
 
         /// <summary>
+        /// POST /api/routes - Create new route file
+        /// </summary>
+        [HttpPost]
+        public ActionResult<ApiRouteDetail> CreateRoute([FromBody] CreateRouteRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request?.Path))
+            {
+                return BadRequest(new { error = "path is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Content))
+            {
+                return BadRequest(new { error = "content is required" });
+            }
+
+            // Ensure path ends with .json
+            var path = request.Path;
+            if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                path += ".json";
+            }
+
+            // Normalize path separators
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+            var fullPath = Path.Combine(routesDirectory, path);
+
+            // Security: ensure path is within routes directory
+            var normalizedPath = Path.GetFullPath(fullPath);
+            var normalizedRoutesDir = Path.GetFullPath(routesDirectory);
+            if (!normalizedPath.StartsWith(normalizedRoutesDir))
+            {
+                return BadRequest(new { error = "Invalid path" });
+            }
+
+            if (System.IO.File.Exists(fullPath))
+            {
+                return Conflict(new { error = $"Route file '{path}' already exists" });
+            }
+
+            try
+            {
+                // Validate JSON is parseable
+                var testParse = JsonSerializer.Deserialize<RouteFileData>(request.Content, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                // Create directory if needed
+                var directory = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                // Write file
+                System.IO.File.WriteAllText(fullPath, request.Content);
+
+                factory.Log($"Created route file: {path}");
+
+                // Return the created route detail
+                return GetRoute(path.Replace('\\', '/'));
+            }
+            catch (JsonException ex)
+            {
+                return BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+            }
+            catch (Exception ex)
+            {
+                factory.Log($"Failed to create route file {path}: {ex.Message}");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// PUT /api/routes/{*path} - Update existing route file
+        /// </summary>
+        [HttpPut("{**path}")]
+        public ActionResult<ApiRouteDetail> UpdateRoute(string path, [FromBody] UpdateRouteRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return BadRequest(new { error = "path is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request?.Content))
+            {
+                return BadRequest(new { error = "content is required" });
+            }
+
+            // Normalize path separators
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+            var fullPath = Path.Combine(routesDirectory, path);
+
+            // Security: ensure path is within routes directory
+            var normalizedPath = Path.GetFullPath(fullPath);
+            var normalizedRoutesDir = Path.GetFullPath(routesDirectory);
+            if (!normalizedPath.StartsWith(normalizedRoutesDir))
+            {
+                return BadRequest(new { error = "Invalid path" });
+            }
+
+            if (!System.IO.File.Exists(fullPath))
+            {
+                return NotFound(new { error = $"Route file '{path}' not found" });
+            }
+
+            try
+            {
+                // Validate JSON is parseable
+                var testParse = JsonSerializer.Deserialize<RouteFileData>(request.Content, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                // Write file
+                System.IO.File.WriteAllText(fullPath, request.Content);
+
+                factory.Log($"Updated route file: {path}");
+
+                // Return the updated route detail
+                return GetRoute(path.Replace('\\', '/'));
+            }
+            catch (JsonException ex)
+            {
+                return BadRequest(new { error = $"Invalid JSON: {ex.Message}" });
+            }
+            catch (Exception ex)
+            {
+                factory.Log($"Failed to update route file {path}: {ex.Message}");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// DELETE /api/routes/{*path} - Delete route file
+        /// </summary>
+        [HttpDelete("{**path}")]
+        public ActionResult DeleteRoute(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return BadRequest(new { error = "path is required" });
+            }
+
+            // Normalize path separators
+            path = path.Replace('/', Path.DirectorySeparatorChar);
+            var fullPath = Path.Combine(routesDirectory, path);
+
+            // Security: ensure path is within routes directory
+            var normalizedPath = Path.GetFullPath(fullPath);
+            var normalizedRoutesDir = Path.GetFullPath(routesDirectory);
+            if (!normalizedPath.StartsWith(normalizedRoutesDir))
+            {
+                return BadRequest(new { error = "Invalid path" });
+            }
+
+            if (!System.IO.File.Exists(fullPath))
+            {
+                return NotFound(new { error = $"Route file '{path}' not found" });
+            }
+
+            try
+            {
+                System.IO.File.Delete(fullPath);
+                factory.Log($"Deleted route file: {path}");
+
+                return Ok(new { message = $"Route file '{path}' deleted" });
+            }
+            catch (Exception ex)
+            {
+                factory.Log($"Failed to delete route file {path}: {ex.Message}");
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// GET /api/routes/{*path} - Get route file contents
         /// </summary>
         [HttpGet("{**path}")]

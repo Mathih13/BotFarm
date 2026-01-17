@@ -90,6 +90,9 @@
     <Setting Name="MySQLCharactersDB" Type="System.String" Scope="User">
       <Value Profile="(Default)">characters</Value>
     </Setting>
+    <Setting Name="MySQLWorldDB" Type="System.String" Scope="User">
+      <Value Profile="(Default)">world</Value>
+    </Setting>
     <Setting Name="EnableWebUI" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>

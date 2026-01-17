@@ -80,6 +80,13 @@ function RootComponent() {
                     >
                       Suites
                     </Link>
+                    <Link
+                      to="/routes"
+                      activeProps={{ className: 'text-blue-500 font-semibold' }}
+                      inactiveProps={{ className: 'text-gray-600 hover:text-gray-900' }}
+                    >
+                      Routes
+                    </Link>
                   </nav>
                 </div>
                 <div className="flex items-center gap-2">

@@ -1,0 +1,59 @@
+import type { TaskFormProps } from './index'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import { ClassMapEditor } from '../shared/ClassMapEditor'
+import { EntityInput } from '../shared/EntityInput'
+
+export function TurnInQuestForm({ parameters, onChange }: TaskFormProps) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="npcEntry">NPC Entry ID</Label>
+          <EntityInput
+            id="npcEntry"
+            type="npc"
+            value={parameters.npcEntry as number || 0}
+            onChange={(value) => onChange({ npcEntry: value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="questId">Quest ID</Label>
+          <EntityInput
+            id="questId"
+            type="quest"
+            value={parameters.questId as number || 0}
+            onChange={(value) => onChange({ questId: value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="rewardChoice">Reward Choice</Label>
+          <Input
+            id="rewardChoice"
+            type="number"
+            min={0}
+            value={parameters.rewardChoice as number || 0}
+            onChange={(e) => onChange({ rewardChoice: parseInt(e.target.value) || 0 })}
+          />
+          <p className="text-xs text-muted-foreground">0-based index of reward to choose</p>
+        </div>
+      </div>
+
+      <ClassMapEditor
+        label="Class-specific NPCs"
+        description="Override NPC entry per class"
+        value={parameters.classNPCs as Record<string, number> || {}}
+        onChange={(classNPCs) => onChange({ classNPCs })}
+        valueType="number"
+      />
+
+      <ClassMapEditor
+        label="Class-specific Quests"
+        description="Override quest ID per class"
+        value={parameters.classQuests as Record<string, number> || {}}
+        onChange={(classQuests) => onChange({ classQuests })}
+        valueType="number"
+      />
+    </div>
+  )
+}

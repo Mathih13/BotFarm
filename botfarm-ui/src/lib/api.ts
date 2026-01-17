@@ -3,10 +3,16 @@ import type {
   ApiTestRun,
   ApiTestSuiteRun,
   ApiRouteInfo,
+  ApiRouteDetail,
   ApiSuiteInfo,
   StartTestRequest,
   StartSuiteRequest,
+  CreateRouteRequest,
   ApiLogsResponse,
+  EntityLookupRequest,
+  EntityLookupResponse,
+  EntitySearchResponse,
+  EntityType,
 } from './types';
 
 // Use absolute URL in development, relative path in production
@@ -74,7 +80,19 @@ export const suitesApi = {
 export const routesApi = {
   getAll: () => fetchApi<ApiRouteInfo[]>('/routes'),
   getSuites: () => fetchApi<ApiSuiteInfo[]>('/routes/suites'),
-  getByPath: (path: string) => fetchApi<unknown>(`/routes/${path}`),
+  getByPath: (path: string) => fetchApi<ApiRouteDetail>(`/routes/${path}`),
+  create: (request: CreateRouteRequest) =>
+    fetchApi<ApiRouteDetail>('/routes', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  update: (path: string, content: string) =>
+    fetchApi<ApiRouteDetail>(`/routes/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+  delete: (path: string) =>
+    fetchApi<{ message: string }>(`/routes/${path}`, { method: 'DELETE' }),
 };
 
 // Logs API
@@ -88,4 +106,18 @@ export const logsApi = {
     const query = searchParams.toString();
     return fetchApi<ApiLogsResponse>(`/logs${query ? `?${query}` : ''}`);
   },
+};
+
+// Entities API (for looking up NPC/Quest/Item/Object names)
+export const entitiesApi = {
+  lookup: (request: EntityLookupRequest) =>
+    fetchApi<EntityLookupResponse>('/entities/lookup', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  getStatus: () => fetchApi<{ connected: boolean }>('/entities/status'),
+  search: (type: EntityType, query: string, limit = 20) =>
+    fetchApi<EntitySearchResponse>(
+      `/entities/search?type=${type}&query=${encodeURIComponent(query)}&limit=${limit}`
+    ),
 };

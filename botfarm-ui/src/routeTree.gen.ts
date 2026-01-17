@@ -11,12 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TestsRouteImport } from './routes/tests'
 import { Route as SuitesRouteImport } from './routes/suites'
+import { Route as RoutesRouteImport } from './routes/routes'
 import { Route as CustomScriptDotjsRouteImport } from './routes/customScript[.]js'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TestsIndexRouteImport } from './routes/tests.index'
 import { Route as SuitesIndexRouteImport } from './routes/suites.index'
+import { Route as RoutesIndexRouteImport } from './routes/routes.index'
 import { Route as TestsTestIdRouteImport } from './routes/tests.$testId'
 import { Route as SuitesSuiteIdRouteImport } from './routes/suites.$suiteId'
+import { Route as RoutesEditorRouteImport } from './routes/routes.editor'
 
 const TestsRoute = TestsRouteImport.update({
   id: '/tests',
@@ -26,6 +29,11 @@ const TestsRoute = TestsRouteImport.update({
 const SuitesRoute = SuitesRouteImport.update({
   id: '/suites',
   path: '/suites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutesRoute = RoutesRouteImport.update({
+  id: '/routes',
+  path: '/routes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomScriptDotjsRoute = CustomScriptDotjsRouteImport.update({
@@ -48,6 +56,11 @@ const SuitesIndexRoute = SuitesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SuitesRoute,
 } as any)
+const RoutesIndexRoute = RoutesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoutesRoute,
+} as any)
 const TestsTestIdRoute = TestsTestIdRouteImport.update({
   id: '/$testId',
   path: '/$testId',
@@ -58,22 +71,32 @@ const SuitesSuiteIdRoute = SuitesSuiteIdRouteImport.update({
   path: '/$suiteId',
   getParentRoute: () => SuitesRoute,
 } as any)
+const RoutesEditorRoute = RoutesEditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => RoutesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/routes': typeof RoutesRouteWithChildren
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
+  '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
   '/tests/': typeof TestsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/routes': typeof RoutesIndexRoute
   '/suites': typeof SuitesIndexRoute
   '/tests': typeof TestsIndexRoute
 }
@@ -81,10 +104,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/routes': typeof RoutesRouteWithChildren
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
+  '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
   '/tests/': typeof TestsIndexRoute
 }
@@ -93,28 +119,36 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/customScript.js'
+    | '/routes'
     | '/suites'
     | '/tests'
+    | '/routes/editor'
     | '/suites/$suiteId'
     | '/tests/$testId'
+    | '/routes/'
     | '/suites/'
     | '/tests/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/customScript.js'
+    | '/routes/editor'
     | '/suites/$suiteId'
     | '/tests/$testId'
+    | '/routes'
     | '/suites'
     | '/tests'
   id:
     | '__root__'
     | '/'
     | '/customScript.js'
+    | '/routes'
     | '/suites'
     | '/tests'
+    | '/routes/editor'
     | '/suites/$suiteId'
     | '/tests/$testId'
+    | '/routes/'
     | '/suites/'
     | '/tests/'
   fileRoutesById: FileRoutesById
@@ -122,6 +156,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomScriptDotjsRoute: typeof CustomScriptDotjsRoute
+  RoutesRoute: typeof RoutesRouteWithChildren
   SuitesRoute: typeof SuitesRouteWithChildren
   TestsRoute: typeof TestsRouteWithChildren
 }
@@ -140,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/suites'
       fullPath: '/suites'
       preLoaderRoute: typeof SuitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routes': {
+      id: '/routes'
+      path: '/routes'
+      fullPath: '/routes'
+      preLoaderRoute: typeof RoutesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customScript.js': {
@@ -170,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuitesIndexRouteImport
       parentRoute: typeof SuitesRoute
     }
+    '/routes/': {
+      id: '/routes/'
+      path: '/'
+      fullPath: '/routes/'
+      preLoaderRoute: typeof RoutesIndexRouteImport
+      parentRoute: typeof RoutesRoute
+    }
     '/tests/$testId': {
       id: '/tests/$testId'
       path: '/$testId'
@@ -184,8 +233,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuitesSuiteIdRouteImport
       parentRoute: typeof SuitesRoute
     }
+    '/routes/editor': {
+      id: '/routes/editor'
+      path: '/editor'
+      fullPath: '/routes/editor'
+      preLoaderRoute: typeof RoutesEditorRouteImport
+      parentRoute: typeof RoutesRoute
+    }
   }
 }
+
+interface RoutesRouteChildren {
+  RoutesEditorRoute: typeof RoutesEditorRoute
+  RoutesIndexRoute: typeof RoutesIndexRoute
+}
+
+const RoutesRouteChildren: RoutesRouteChildren = {
+  RoutesEditorRoute: RoutesEditorRoute,
+  RoutesIndexRoute: RoutesIndexRoute,
+}
+
+const RoutesRouteWithChildren =
+  RoutesRoute._addFileChildren(RoutesRouteChildren)
 
 interface SuitesRouteChildren {
   SuitesSuiteIdRoute: typeof SuitesSuiteIdRoute
@@ -215,6 +284,7 @@ const TestsRouteWithChildren = TestsRoute._addFileChildren(TestsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomScriptDotjsRoute: CustomScriptDotjsRoute,
+  RoutesRoute: RoutesRouteWithChildren,
   SuitesRoute: SuitesRouteWithChildren,
   TestsRoute: TestsRouteWithChildren,
 }

@@ -266,4 +266,48 @@ namespace BotFarm.Web.Models
         public int TotalCount { get; set; }
         public int FilteredCount { get; set; }
     }
+
+    // ============ Route Editor Models ============
+
+    public class CreateRouteRequest
+    {
+        public string Path { get; set; }  // e.g., "my-routes/test.json"
+        public string Content { get; set; }  // Raw JSON content
+    }
+
+    public class UpdateRouteRequest
+    {
+        public string Content { get; set; }  // Raw JSON content
+    }
+
+    // ============ Entity Lookup Models ============
+
+    public class EntityLookupRequest
+    {
+        public uint[] NpcEntries { get; set; }
+        public uint[] QuestIds { get; set; }
+        public uint[] ItemEntries { get; set; }
+        public uint[] ObjectEntries { get; set; }
+    }
+
+    public class EntityLookupResponse
+    {
+        public Dictionary<uint, string> Npcs { get; set; } = new();
+        public Dictionary<uint, string> Quests { get; set; } = new();
+        public Dictionary<uint, string> Items { get; set; } = new();
+        public Dictionary<uint, string> Objects { get; set; } = new();
+    }
+
+    // ============ Entity Search Models ============
+
+    public class EntitySearchResult
+    {
+        public uint Entry { get; set; }
+        public string Name { get; set; }
+    }
+
+    public class EntitySearchResponse
+    {
+        public List<EntitySearchResult> Results { get; set; } = new();
+    }
 }

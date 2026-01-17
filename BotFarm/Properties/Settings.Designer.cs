@@ -290,6 +290,18 @@ namespace BotFarm.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("world")]
+        public string MySQLWorldDB {
+            get {
+                return ((string)(this["MySQLWorldDB"]));
+            }
+            set {
+                this["MySQLWorldDB"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool EnableWebUI {
             get {
