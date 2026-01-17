@@ -16,8 +16,15 @@ namespace BotFarm
             Console.WriteLine("BotFarm starting...");
             Console.WriteLine($"Current directory: {Environment.CurrentDirectory}");
 
-            // Check for auto mode (legacy behavior - auto-spawn bots on startup)
-            bool autoMode = args.Contains("--auto") || args.Contains("-a");
+            // Parse command-line options
+            var options = LaunchOptions.Parse(args);
+
+            if (options.ConsoleOnly)
+                Console.WriteLine("Running in console-only mode (--no-ui)");
+            if (options.DevUI)
+                Console.WriteLine("Using development UI server (--dev-ui)");
+            if (options.NoBrowser)
+                Console.WriteLine("Browser auto-open disabled (--no-browser)");
 
             try
             {
@@ -25,10 +32,10 @@ namespace BotFarm
                 Console.WriteLine("Flushing console...");
                 Console.Out.Flush();
 
-                using (BotFactory factory = new BotFactory())
+                using (BotFactory factory = new BotFactory(options))
                 {
                     int botCount;
-                    if (autoMode)
+                    if (options.AutoMode)
                     {
                         Random random = new Random();
                         botCount = random.Next(Settings.Default.MinBotsCount, Settings.Default.MaxBotsCount);

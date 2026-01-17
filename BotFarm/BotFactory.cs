@@ -42,6 +42,7 @@ namespace BotFarm
         TestSuiteCoordinator suiteCoordinator;
         SnapshotManager snapshotManager;
         WebApiHost webApiHost;
+        UILauncher uiLauncher;
 
         /// <summary>
         /// In-memory buffer for log entries, accessible via Web API
@@ -53,9 +54,15 @@ namespace BotFarm
         internal TestSuiteCoordinator SuiteCoordinator => suiteCoordinator;
         internal IReadOnlyList<BotGame> Bots => bots;
 
-        public BotFactory()
+        // Store launch options for later access
+        private readonly LaunchOptions launchOptions;
+
+        public BotFactory() : this(new LaunchOptions()) { }
+
+        public BotFactory(LaunchOptions options)
         {
             Instance = this;
+            launchOptions = options ?? new LaunchOptions();
 
             try
             {
@@ -224,6 +231,21 @@ namespace BotFarm
                     {
                         Log($"Failed to start Web API: {webEx.Message}");
                         webApiHost = null;
+                    }
+                }
+
+                // Initialize UI launcher if web UI is enabled and not running in console-only mode
+                if (Settings.Default.EnableWebUI && !launchOptions.ConsoleOnly)
+                {
+                    try
+                    {
+                        uiLauncher = new UILauncher(this, Settings.Default.WebUIPort, launchOptions.DevUI, !launchOptions.NoBrowser);
+                        _ = uiLauncher.StartAsync(); // Fire-and-forget, don't block startup
+                    }
+                    catch (Exception uiEx)
+                    {
+                        Log($"Failed to start UI launcher: {uiEx.Message}");
+                        uiLauncher = null;
                     }
                 }
             }
@@ -948,7 +970,18 @@ namespace BotFarm
             Log("Shutting down BotFactory");
             Log("This might take at least 20 seconds to allow all bots to properly logout");
 
-            // Stop web API first
+            // Stop UI launcher first
+            if (uiLauncher != null)
+            {
+                try
+                {
+                    uiLauncher.Dispose();
+                }
+                catch { }
+                uiLauncher = null;
+            }
+
+            // Stop web API
             if (webApiHost != null)
             {
                 try
