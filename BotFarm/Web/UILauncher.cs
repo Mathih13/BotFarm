@@ -220,7 +220,7 @@ namespace BotFarm.Web
             int port = isDevelopment ? DevServerPort : ProductionServerPort;
             string url = $"http://localhost:{port}";
 
-            using var httpClient = new HttpClient();
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
             httpClient.Timeout = TimeSpan.FromSeconds(2);
 
             int maxRetries = 30; // 30 seconds max wait
