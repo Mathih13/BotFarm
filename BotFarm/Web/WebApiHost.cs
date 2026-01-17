@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using BotFarm.Properties;
 using BotFarm.Testing;
 using BotFarm.Web.Hubs;
 using BotFarm.Web.Services;
@@ -59,6 +60,17 @@ namespace BotFarm.Web
             builder.Services.AddSingleton(testCoordinator);
             builder.Services.AddSingleton(suiteCoordinator);
             builder.Services.AddSingleton<TestEventBroadcaster>();
+
+            // Register world database service for entity lookups
+            var worldDb = new WorldDatabaseService(
+                Settings.Default.MySQLHost,
+                Settings.Default.MySQLPort,
+                Settings.Default.MySQLUser,
+                Settings.Default.MySQLPassword,
+                Settings.Default.MySQLWorldDB
+            );
+            worldDb.Connect();
+            builder.Services.AddSingleton(worldDb);
 
             app = builder.Build();
 
