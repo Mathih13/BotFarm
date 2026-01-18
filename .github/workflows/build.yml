@@ -36,8 +36,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: botfarm-ui/package-lock.json
 
       - name: Determine version
         id: version
@@ -81,7 +79,7 @@ jobs:
 
       - name: Install UI dependencies
         working-directory: botfarm-ui
-        run: npm ci
+        run: npm install
 
       - name: Build UI
         working-directory: botfarm-ui

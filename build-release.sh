@@ -109,8 +109,8 @@ fi
 if [ "$SKIP_UI" = false ]; then
     echo -e "\n\033[33m[3/4] Building web UI...\033[0m"
     pushd "$SCRIPT_DIR/botfarm-ui" > /dev/null
-    if ! npm ci; then
-        echo -e "\033[31mnpm ci failed!\033[0m"
+    if ! npm install; then
+        echo -e "\033[31mnpm install failed!\033[0m"
         exit 1
     fi
     if ! npm run build; then
