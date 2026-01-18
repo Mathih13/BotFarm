@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TestsRouteImport } from './routes/tests'
 import { Route as SuitesRouteImport } from './routes/suites'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RoutesRouteImport } from './routes/routes'
 import { Route as CustomScriptDotjsRouteImport } from './routes/customScript[.]js'
 import { Route as IndexRouteImport } from './routes/index'
@@ -29,6 +30,11 @@ const TestsRoute = TestsRouteImport.update({
 const SuitesRoute = SuitesRouteImport.update({
   id: '/suites',
   path: '/suites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoutesRoute = RoutesRouteImport.update({
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
   '/routes': typeof RoutesRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
   '/routes/editor': typeof RoutesEditorRoute
@@ -93,6 +100,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/settings': typeof SettingsRoute
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/tests/$testId': typeof TestsTestIdRoute
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
   '/routes': typeof RoutesRouteWithChildren
+  '/settings': typeof SettingsRoute
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
   '/routes/editor': typeof RoutesEditorRoute
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/'
     | '/customScript.js'
     | '/routes'
+    | '/settings'
     | '/suites'
     | '/tests'
     | '/routes/editor'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/customScript.js'
+    | '/settings'
     | '/routes/editor'
     | '/suites/$suiteId'
     | '/tests/$testId'
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/'
     | '/customScript.js'
     | '/routes'
+    | '/settings'
     | '/suites'
     | '/tests'
     | '/routes/editor'
@@ -157,6 +169,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomScriptDotjsRoute: typeof CustomScriptDotjsRoute
   RoutesRoute: typeof RoutesRouteWithChildren
+  SettingsRoute: typeof SettingsRoute
   SuitesRoute: typeof SuitesRouteWithChildren
   TestsRoute: typeof TestsRouteWithChildren
 }
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/suites'
       fullPath: '/suites'
       preLoaderRoute: typeof SuitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/routes': {
@@ -285,6 +305,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomScriptDotjsRoute: CustomScriptDotjsRoute,
   RoutesRoute: RoutesRouteWithChildren,
+  SettingsRoute: SettingsRoute,
   SuitesRoute: SuitesRouteWithChildren,
   TestsRoute: TestsRouteWithChildren,
 }

@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { statusApi, testsApi, suitesApi } from '~/lib/api'
+import { statusApi, testsApi, suitesApi, configApi } from '~/lib/api'
 import { useTestRunEvents, useSuiteEvents } from '~/lib/signalr'
 import { formatDuration, formatDateTime, getStatusColor, getStatusIcon, isRunning } from '~/lib/utils'
-import type { ApiStatusResponse, ApiTestRun, ApiTestSuiteRun } from '~/lib/types'
+import type { ApiStatusResponse, ApiTestRun, ApiTestSuiteRun, ConfigStatusResponse } from '~/lib/types'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table'
+import { FirstRunBanner } from '~/components/settings/FirstRunBanner'
 
 export const Route = createFileRoute('/')({
   component: Dashboard,
@@ -24,6 +25,7 @@ function Dashboard() {
   const [activeTests, setActiveTests] = useState<ApiTestRun[]>([])
   const [activeSuites, setActiveSuites] = useState<ApiTestSuiteRun[]>([])
   const [recentTests, setRecentTests] = useState<ApiTestRun[]>([])
+  const [configStatus, setConfigStatus] = useState<ConfigStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,16 +33,18 @@ function Dashboard() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [statusRes, testsRes, suitesRes, completedRes] = await Promise.all([
+        const [statusRes, testsRes, suitesRes, completedRes, configStatusRes] = await Promise.all([
           statusApi.getStatus(),
           testsApi.getActive(),
           suitesApi.getActive(),
           testsApi.getCompleted(),
+          configApi.getStatus(),
         ])
         setStatus(statusRes)
         setActiveTests(testsRes)
         setActiveSuites(suitesRes)
         setRecentTests(completedRes.slice(0, 10))
+        setConfigStatus(configStatusRes)
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load data')
@@ -119,6 +123,14 @@ function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-2xl font-bold mb-8">Dashboard</h1>
+
+      {/* First Run Banner */}
+      {configStatus?.isFirstRun && (
+        <FirstRunBanner
+          missingPaths={configStatus.missingPaths}
+          invalidPaths={configStatus.invalidPaths}
+        />
+      )}
 
       {/* Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
