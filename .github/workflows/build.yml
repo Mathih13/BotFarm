@@ -1,0 +1,189 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g., 0.2.0)'
+        required: false
+        type: string
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: botfarm-ui/package-lock.json
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event.inputs.version }}" -ne "") {
+            $version = "${{ github.event.inputs.version }}"
+          } elseif ("${{ github.event_name }}" -eq "push" -and "${{ github.ref }}" -eq "refs/heads/master") {
+            # Read base version from Directory.Build.props
+            [xml]$props = Get-Content "Directory.Build.props"
+            $baseVersion = $props.Project.PropertyGroup.Version
+            # Append run number for auto-versioning
+            $version = "$baseVersion.${{ github.run_number }}"
+          } else {
+            # PR builds use base version
+            [xml]$props = Get-Content "Directory.Build.props"
+            $version = $props.Project.PropertyGroup.Version
+          }
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "Building version: $version"
+
+      - name: Update version in Directory.Build.props
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          [xml]$props = Get-Content "Directory.Build.props"
+          $props.Project.PropertyGroup.Version = $version
+          $props.Project.PropertyGroup.AssemblyVersion = $version
+          $props.Project.PropertyGroup.FileVersion = $version
+          $props.Project.PropertyGroup.InformationalVersion = $version
+          $props.Save("Directory.Build.props")
+
+      - name: Restore .NET dependencies
+        run: dotnet restore BotFarm.sln
+
+      - name: Build .NET solution
+        run: dotnet build BotFarm.sln -c Release -p:Platform=x64 --no-restore
+
+      - name: Run tests
+        run: dotnet test "TrinityCore UnitTests/TrinityCore UnitTests.csproj" -c Release --no-build --verbosity normal
+
+      - name: Install UI dependencies
+        working-directory: botfarm-ui
+        run: npm ci
+
+      - name: Build UI
+        working-directory: botfarm-ui
+        run: npm run build
+
+      - name: Create release package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $releaseDir = "release/BotFarm-$version"
+
+          # Create release directory structure
+          New-Item -ItemType Directory -Force -Path "$releaseDir"
+          New-Item -ItemType Directory -Force -Path "$releaseDir/botfarm-ui"
+          New-Item -ItemType Directory -Force -Path "$releaseDir/routes"
+
+          # Copy .NET output
+          Copy-Item -Path "BotFarm/bin/x64/Release/net8.0/*" -Destination "$releaseDir" -Recurse -Force
+
+          # Copy UI output
+          Copy-Item -Path "botfarm-ui/.output/*" -Destination "$releaseDir/botfarm-ui" -Recurse -Force
+
+          # Copy native libs if present (they may not be in CI)
+          if (Test-Path "BotFarm/lib/cli.dll") {
+            Copy-Item -Path "BotFarm/lib/cli.dll" -Destination "$releaseDir" -Force
+          }
+          if (Test-Path "BotFarm/lib/Ijwhost.dll") {
+            Copy-Item -Path "BotFarm/lib/Ijwhost.dll" -Destination "$releaseDir" -Force
+          }
+          if (Test-Path "BotFarm/lib/cli.runtimeconfig.json") {
+            Copy-Item -Path "BotFarm/lib/cli.runtimeconfig.json" -Destination "$releaseDir" -Force
+          }
+          if (Test-Path "BotFarm/lib/cli.deps.json") {
+            Copy-Item -Path "BotFarm/lib/cli.deps.json" -Destination "$releaseDir" -Force
+          }
+
+          # Create release README
+          @"
+          BotFarm v$version
+          ==================
+
+          A bot farm application for spawning automated World of Warcraft players.
+
+          REQUIREMENTS
+          ------------
+          - Windows x64
+          - .NET 8.0 Runtime (https://dotnet.microsoft.com/download/dotnet/8.0)
+          - Node.js 20+ (https://nodejs.org/)
+          - TrinityCore server with Remote Access enabled
+          - Map data files (mmaps, vmaps, maps, dbc)
+
+          NATIVE LIBRARIES
+          ----------------
+          The bundled cli.dll is built for tswow's TrinityCore fork. If you're using a
+          different TrinityCore version and experience pathfinding issues, rebuild cli.dll
+          from your TrinityCore source with the CLI branch:
+          https://github.com/jackpoz/TrinityCore/tree/CLI
+
+          QUICK START
+          -----------
+          1. Extract this archive
+          2. Edit BotFarm.dll.config with your server settings and data paths
+          3. Run: BotFarm.exe
+          4. Web UI opens automatically at http://localhost:3000
+
+          For full documentation, visit:
+          https://github.com/Mathih13/BotFarm
+          "@ | Out-File -FilePath "$releaseDir/README.txt" -Encoding utf8
+
+          # Create zip archive
+          Compress-Archive -Path "$releaseDir" -DestinationPath "release/BotFarm-$version-win-x64.zip" -Force
+
+      - name: Upload build artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BotFarm-${{ steps.version.outputs.version }}-win-x64
+          path: release/BotFarm-${{ steps.version.outputs.version }}-win-x64.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: BotFarm-${{ needs.build.outputs.version }}-win-x64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: BotFarm v${{ needs.build.outputs.version }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: BotFarm-${{ needs.build.outputs.version }}-win-x64.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

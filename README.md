@@ -1,9 +1,12 @@
 # BotFarm
 
-[![Build status](https://ci.appveyor.com/api/projects/status/7tdp1nrwatndex5r/branch/master?svg=true)](https://ci.appveyor.com/project/jackpoz/botfarm)
-[![SonarCloud](https://sonarcloud.io/api/project_badges/measure?project=jackpoz_BotFarm&metric=alert_status)](https://sonarcloud.io/dashboard?id=jackpoz_BotFarm)
+[![Build and Release](https://github.com/Mathih13/BotFarm/actions/workflows/build.yml/badge.svg)](https://github.com/Mathih13/BotFarm/actions/workflows/build.yml)
 
 A bot farm application for spawning multiple automated World of Warcraft players that connect to TrinityCore-based private servers.
+
+## Download
+
+Download the latest release from the [Releases page](https://github.com/Mathih13/BotFarm/releases).
 
 ## Features
 
@@ -13,34 +16,23 @@ A bot farm application for spawning multiple automated World of Warcraft players
 - **Multi-Bot Coordination** - Bots coordinate to avoid targeting the same mobs
 - **Auto Account Creation** - Automatically creates accounts via Remote Access
 - **Quest Support** - Accept quests, kill mobs, collect items, turn in quests
+- **Web UI** - Real-time monitoring dashboard at http://localhost:3000
 - **Test Framework** - E2E testing with harness configuration and assertion tasks
 
-## Quick Start
+## Quick Start (Release)
 
-### 1. Prerequisites
+### Requirements
 
-- .NET 8.0 SDK
+- Windows x64
+- [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [Node.js 20+](https://nodejs.org/)
 - TrinityCore server with Remote Access enabled
 - Map data files (mmaps, vmaps, maps, dbc)
 
-### 2. Build
+### Installation
 
-```bash
-dotnet build BotFarm.sln -c Release -p:Platform=x64
-```
-
-### 3. Setup Native Libraries
-
-Copy these files to `BotFarm/lib/` from a [TrinityCore CLI build](https://github.com/jackpoz/TrinityCore/tree/CLI):
-- `cli.dll`
-- `Ijwhost.dll`
-- `cli.runtimeconfig.json`
-
-> **Note**: Build TrinityCore with CMake options `SERVERS=ON` and `TOOLS=ON`
-
-### 4. Configure
-
-Edit `BotFarm.dll.config` in the output folder:
+1. Download and extract the latest release
+2. Edit `BotFarm.dll.config` with your server settings:
 
 ```xml
 <!-- Server connection -->
@@ -59,14 +51,6 @@ Edit `BotFarm.dll.config` in the output folder:
     <value>admin</value>
 </setting>
 
-<!-- Bot count -->
-<setting name="MinBotsCount" serializeAs="String">
-    <value>1</value>
-</setting>
-<setting name="MaxBotsCount" serializeAs="String">
-    <value>5</value>
-</setting>
-
 <!-- Data paths (from your TrinityCore server) -->
 <setting name="MMAPsFolderPath" serializeAs="String">
     <value>C:\TrinityCore\mmaps</value>
@@ -82,21 +66,38 @@ Edit `BotFarm.dll.config` in the output folder:
 </setting>
 ```
 
-### 5. Run
+3. Run `BotFarm.exe`
+4. Web UI opens automatically at http://localhost:3000
+
+### Native Library Compatibility
+
+The bundled `cli.dll` is built for tswow's TrinityCore fork. If you're using a different TrinityCore version and experience pathfinding issues, rebuild cli.dll from your TrinityCore source with the CLI branch: https://github.com/jackpoz/TrinityCore/tree/CLI
+
+## Web UI
+
+BotFarm includes a real-time web dashboard for monitoring and controlling bots.
+
+**Features:**
+- Live bot status and statistics
+- Route assignment and management
+- Test run monitoring
+- Interactive map visualization
+
+The UI starts automatically with BotFarm. For development mode (hot reloading):
 
 ```bash
-cd BotFarm/bin/x64/Release/net8.0
+# Start BotFarm with dev UI flag
+./BotFarm.exe --dev-ui
 
-# Test mode (default) - no auto-spawn, use test commands
-./BotFarm.exe
-
-# Auto-spawn mode (legacy behavior)
-./BotFarm.exe --auto
+# In another terminal, start the dev server
+cd botfarm-ui
+npm install
+npm run dev
 ```
 
 ## Task System
 
-Bots follow JSON-defined routes that specify a sequence of tasks. Routes are loaded from the `BotFarm/routes/` folder.
+Bots follow JSON-defined routes that specify a sequence of tasks. Routes are loaded from the `routes/` folder.
 
 ### Route Structure
 
@@ -235,6 +236,61 @@ See [docs/TEST_FRAMEWORK_PLAN.md](docs/TEST_FRAMEWORK_PLAN.md) for full document
 | `stats` or `info` | Display bot statistics |
 | `quit` or `exit` | Clean shutdown (saves bot info) |
 
+## Building from Source
+
+### Requirements
+
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [Node.js 20+](https://nodejs.org/)
+- Visual Studio 2022 (optional, for IDE)
+
+### Build Commands
+
+```bash
+# Debug build
+dotnet build BotFarm.sln -c Debug -p:Platform=x64
+
+# Release build
+dotnet build BotFarm.sln -c Release -p:Platform=x64
+
+# Run tests
+dotnet test "TrinityCore UnitTests/TrinityCore UnitTests.csproj"
+
+# Build UI
+cd botfarm-ui
+npm install
+npm run build
+```
+
+### Local Release Build
+
+Use the build script to create a full release package:
+
+```bash
+# Build with current version from Directory.Build.props
+./build-release.sh
+
+# Build with specific version
+./build-release.sh -v 0.2.0
+
+# Skip tests or UI
+./build-release.sh --skip-tests --skip-ui
+
+# See all options
+./build-release.sh --help
+```
+
+Output is placed in the `release/` folder.
+
+### Native Library Compilation
+
+The pathfinding requires native libraries from TrinityCore:
+
+1. Clone [TrinityCore CLI branch](https://github.com/jackpoz/TrinityCore/tree/CLI)
+2. Configure with CMake: `cmake -DSERVERS=ON -DTOOLS=ON ..`
+3. Build the solution
+4. Copy `cli.dll`, `Ijwhost.dll`, `cli.runtimeconfig.json`, `cli.deps.json` to `BotFarm/lib/`
+
 ## Configuration Reference
 
 | Setting | Description |
@@ -250,35 +306,6 @@ See [docs/TEST_FRAMEWORK_PLAN.md](docs/TEST_FRAMEWORK_PLAN.md) for full document
 | `VMAPsFolderPath` | Path to vmaps folder |
 | `MAPsFolderPath` | Path to maps folder |
 | `DBCsFolderPath` | Path to dbc folder |
-
-## Building from Source
-
-### Requirements
-
-- .NET 8.0 SDK
-- Visual Studio 2022 (optional, for IDE)
-
-### Build Commands
-
-```bash
-# Debug build
-dotnet build BotFarm.sln -c Debug -p:Platform=x64
-
-# Release build
-dotnet build BotFarm.sln -c Release -p:Platform=x64
-
-# Run tests
-dotnet test "TrinityCore UnitTests/TrinityCore UnitTests.csproj"
-```
-
-### Native Library Compilation
-
-The pathfinding requires native libraries from TrinityCore:
-
-1. Clone [TrinityCore CLI branch](https://github.com/jackpoz/TrinityCore/tree/CLI)
-2. Configure with CMake: `cmake -DSERVERS=ON -DTOOLS=ON ..`
-3. Build the solution
-4. Copy `cli.dll`, `Ijwhost.dll`, `cli.runtimeconfig.json` to `BotFarm/lib/`
 
 ## Credits
 
