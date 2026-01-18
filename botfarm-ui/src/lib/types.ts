@@ -317,3 +317,100 @@ export interface EntitySearchResult {
 export interface EntitySearchResponse {
   results: EntitySearchResult[];
 }
+
+// ============ Configuration Types ============
+
+export interface ConfigResponse {
+  // Server Connection
+  hostname: string;
+  port: number;
+  username: string;
+  password: string;
+  raPort: number;
+  realmID: number;
+
+  // Bot Settings
+  minBotsCount: number;
+  maxBotsCount: number;
+  randomBots: boolean;
+  createAccountOnly: boolean;
+
+  // Data Paths
+  mmapsFolderPath: string;
+  vmapsFolderPath: string;
+  mapsFolderPath: string;
+  dbcsFolderPath: string;
+
+  // MySQL Settings
+  mySQLHost: string;
+  mySQLPort: number;
+  mySQLUser: string;
+  mySQLPassword: string;
+  mySQLCharactersDB: string;
+  mySQLWorldDB: string;
+
+  // Web UI Settings
+  enableWebUI: boolean;
+  webUIPort: number;
+}
+
+export interface ConfigUpdateRequest {
+  // Server Connection
+  hostname: string;
+  port: number;
+  username: string;
+  password: string;
+  raPort: number;
+  realmID: number;
+
+  // Bot Settings
+  minBotsCount: number;
+  maxBotsCount: number;
+  randomBots: boolean;
+  createAccountOnly: boolean;
+
+  // Data Paths
+  mmapsFolderPath: string;
+  vmapsFolderPath: string;
+  mapsFolderPath: string;
+  dbcsFolderPath: string;
+
+  // MySQL Settings
+  mySQLHost: string;
+  mySQLPort: number;
+  mySQLUser: string;
+  mySQLPassword: string;
+  mySQLCharactersDB: string;
+  mySQLWorldDB: string;
+
+  // Web UI Settings
+  enableWebUI: boolean;
+  webUIPort: number;
+}
+
+export interface ConfigUpdateResponse {
+  success: boolean;
+  restartRequired: boolean;
+  message: string;
+  errors: string[];
+}
+
+export interface ConfigStatusResponse {
+  isFirstRun: boolean;
+  setupModeRequired: boolean;
+  missingPaths: string[];
+  invalidPaths: string[];
+}
+
+export interface PathValidationRequest {
+  path: string;
+  pathType: string;
+}
+
+export interface PathValidationResponse {
+  valid: boolean;
+  exists: boolean;
+  hasExpectedFiles: boolean;
+  message: string;
+  foundFiles: string[];
+}

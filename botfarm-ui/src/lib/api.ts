@@ -13,6 +13,12 @@ import type {
   EntityLookupResponse,
   EntitySearchResponse,
   EntityType,
+  ConfigResponse,
+  ConfigUpdateRequest,
+  ConfigUpdateResponse,
+  ConfigStatusResponse,
+  PathValidationRequest,
+  PathValidationResponse,
 } from './types';
 
 // Use absolute URL in development, relative path in production
@@ -120,4 +126,20 @@ export const entitiesApi = {
     fetchApi<EntitySearchResponse>(
       `/entities/search?type=${type}&query=${encodeURIComponent(query)}&limit=${limit}`
     ),
+};
+
+// Config API (for application settings)
+export const configApi = {
+  getConfig: () => fetchApi<ConfigResponse>('/config'),
+  updateConfig: (config: ConfigUpdateRequest) =>
+    fetchApi<ConfigUpdateResponse>('/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+  getStatus: () => fetchApi<ConfigStatusResponse>('/config/status'),
+  validatePath: (request: PathValidationRequest) =>
+    fetchApi<PathValidationResponse>('/config/validate-paths', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
 };
