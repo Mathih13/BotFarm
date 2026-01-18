@@ -169,10 +169,13 @@ namespace BotFarm
             #endregion
 
             #region TestMove
-            if (Behavior.TestMove)
-            {
-                PushStrategicAI(new TestMoveAI());
-            }
+#if DEBUG
+            // TestMoveAI is only available in debug builds (file is gitignored)
+            // if (Behavior.TestMove)
+            // {
+            //     PushStrategicAI(new TestMoveAI());
+            // }
+#endif
             #endregion
 
             #region FollowGroupLeader
