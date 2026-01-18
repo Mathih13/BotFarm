@@ -3,6 +3,7 @@ using Client;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ namespace BotFarm
     {
         static void Main(string[] args)
         {
+            bool restartRequested = false;
             Console.WriteLine("BotFarm starting...");
             Console.WriteLine($"Current directory: {Environment.CurrentDirectory}");
 
@@ -50,6 +52,27 @@ namespace BotFarm
 
                     factory.SetupFactory(botCount);
                     GC.KeepAlive(factory);
+
+                    // Capture restart flag before disposal
+                    restartRequested = factory.RestartRequested;
+                }
+
+                // Handle restart after factory is disposed
+                if (restartRequested)
+                {
+                    Console.WriteLine("Restarting application...");
+                    var processPath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(processPath))
+                    {
+                        var startInfo = new ProcessStartInfo
+                        {
+                            FileName = processPath,
+                            Arguments = string.Join(" ", args),
+                            UseShellExecute = true
+                        };
+                        Process.Start(startInfo);
+                    }
+                    return;
                 }
             }
             catch(UnauthorizedAccessException ex)

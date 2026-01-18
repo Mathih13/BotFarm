@@ -54,6 +54,19 @@ namespace BotFarm
         internal TestSuiteCoordinator SuiteCoordinator => suiteCoordinator;
         internal IReadOnlyList<BotGame> Bots => bots;
 
+        /// <summary>
+        /// Flag indicating the application should restart after disposal
+        /// </summary>
+        public bool RestartRequested { get; private set; }
+
+        /// <summary>
+        /// Flag indicating the application is in setup mode (paths not configured)
+        /// </summary>
+        public bool SetupModeRequired { get; private set; }
+
+        // Event signaled when shutdown is requested
+        private readonly ManualResetEventSlim shutdownEvent = new ManualResetEventSlim(false);
+
         // Store launch options for later access
         private readonly LaunchOptions launchOptions;
 
@@ -132,68 +145,86 @@ namespace BotFarm
 
             try
             {
+                // Log the config file location for debugging
+                var config = System.Configuration.ConfigurationManager.OpenExeConfiguration(System.Configuration.ConfigurationUserLevel.PerUserRoamingAndLocal);
+                Log($"User config file path: {config.FilePath}");
+                Log($"User config file exists: {System.IO.File.Exists(config.FilePath)}");
+
                 // Trim paths to remove any leading/trailing whitespace from App.config
                 string mmapsPath = Settings.Default.MMAPsFolderPath?.Trim();
                 string vmapsPath = Settings.Default.VMAPsFolderPath?.Trim();
                 string mapsPath = Settings.Default.MAPsFolderPath?.Trim();
                 string dbcsPath = Settings.Default.DBCsFolderPath?.Trim();
 
-                Log("Initializing Detour with path: " + mmapsPath);
-                logger.Flush();
-                DetourCLI.Detour.Initialize(mmapsPath);
+                // Check if paths are valid before attempting initialization
+                bool pathsValid = ArePathsValid(mmapsPath, vmapsPath, mapsPath, dbcsPath);
 
-                Log("Initializing VMap with path: " + vmapsPath);
-                logger.Flush();
-                VMapCLI.VMap.Initialize(vmapsPath);
-
-                Log("Initializing Map with path: " + mapsPath);
-                logger.Flush();
-                MapCLI.Map.Initialize(mapsPath);
-                
-                Log("Initializing DBCStores with path: " + dbcsPath);
-                logger.Flush();
-                DBCStoresCLI.DBCStores.Initialize(dbcsPath);
-                
-                Log("Loading DBCs");
-                logger.Flush();
-                DBCStoresCLI.DBCStores.LoadDBCs();
-                
-                Log("All initializations complete");
-                logger.Flush();
-                
-                // Initialize RemoteAccess connection once for all bots
-                Log("Connecting to Remote Access for account creation");
-                remoteAccess = new RemoteAccess(Settings.Default.Hostname, Settings.Default.RAPort, 
-                                                 Settings.Default.Username, Settings.Default.Password);
-                if (!remoteAccess.Connect())
+                if (!pathsValid)
                 {
-                    Log("Failed to connect to Remote Access - account creation will fail!");
+                    Log("Data paths are not configured or invalid - running in setup mode");
+                    Log("Please configure paths via the Web UI settings page");
+                    SetupModeRequired = true;
                 }
                 else
                 {
-                    Log("Remote Access connected successfully");
-                }
-                logger.Flush();
+                    Log($"Raw MMAPsFolderPath from Settings.Default: '{Settings.Default.MMAPsFolderPath}'");
+                    Log("Initializing Detour with path: " + mmapsPath);
+                    logger.Flush();
+                    DetourCLI.Detour.Initialize(mmapsPath);
 
-                // Initialize MySQL database access for quest completion
-                try
-                {
-                    databaseAccess = new DatabaseAccess(
-                        Settings.Default.MySQLHost,
-                        Settings.Default.MySQLPort,
-                        Settings.Default.MySQLUser,
-                        Settings.Default.MySQLPassword,
-                        Settings.Default.MySQLCharactersDB
-                    );
-                    databaseAccess.Connect();
-                    Log("MySQL database connected for quest completion");
+                    Log("Initializing VMap with path: " + vmapsPath);
+                    logger.Flush();
+                    VMapCLI.VMap.Initialize(vmapsPath);
+
+                    Log("Initializing Map with path: " + mapsPath);
+                    logger.Flush();
+                    MapCLI.Map.Initialize(mapsPath);
+
+                    Log("Initializing DBCStores with path: " + dbcsPath);
+                    logger.Flush();
+                    DBCStoresCLI.DBCStores.Initialize(dbcsPath);
+
+                    Log("Loading DBCs");
+                    logger.Flush();
+                    DBCStoresCLI.DBCStores.LoadDBCs();
+
+                    Log("All initializations complete");
+                    logger.Flush();
+
+                    // Initialize RemoteAccess connection once for all bots
+                    Log("Connecting to Remote Access for account creation");
+                    remoteAccess = new RemoteAccess(Settings.Default.Hostname, Settings.Default.RAPort,
+                                                     Settings.Default.Username, Settings.Default.Password);
+                    if (!remoteAccess.Connect())
+                    {
+                        Log("Failed to connect to Remote Access - account creation will fail!");
+                    }
+                    else
+                    {
+                        Log("Remote Access connected successfully");
+                    }
+                    logger.Flush();
+
+                    // Initialize MySQL database access for quest completion
+                    try
+                    {
+                        databaseAccess = new DatabaseAccess(
+                            Settings.Default.MySQLHost,
+                            Settings.Default.MySQLPort,
+                            Settings.Default.MySQLUser,
+                            Settings.Default.MySQLPassword,
+                            Settings.Default.MySQLCharactersDB
+                        );
+                        databaseAccess.Connect();
+                        Log("MySQL database connected for quest completion");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"MySQL connection failed (quest completion disabled): {ex.Message}");
+                        databaseAccess = null;
+                    }
+                    logger.Flush();
                 }
-                catch (Exception ex)
-                {
-                    Log($"MySQL connection failed (quest completion disabled): {ex.Message}");
-                    databaseAccess = null;
-                }
-                logger.Flush();
 
                 // Initialize snapshot manager (requires database)
                 snapshotManager = new SnapshotManager(databaseAccess);
@@ -219,13 +250,18 @@ namespace BotFarm
                 suiteCoordinator.SuiteCompleted += (s, suite) =>
                     Log($"Test suite completed: {suite.Id} - Status: {suite.Status} ({suite.TestsPassed}/{suite.TotalTests} passed)");
 
-                // Initialize Web API host if enabled
-                if (Settings.Default.EnableWebUI)
+                // Initialize Web API host if enabled (always start in setup mode so user can configure)
+                if (Settings.Default.EnableWebUI || SetupModeRequired)
                 {
                     try
                     {
                         webApiHost = new WebApiHost(this, testCoordinator, suiteCoordinator, Settings.Default.WebUIPort);
                         webApiHost.StartAsync().Wait();
+
+                        if (SetupModeRequired)
+                        {
+                            Log($"Web UI available at http://localhost:{Settings.Default.WebUIPort} - please configure settings");
+                        }
                     }
                     catch (Exception webEx)
                     {
@@ -489,35 +525,63 @@ namespace BotFarm
 
             SaveBotInfos();
 
-            for (; ; )
+            // Start a background thread for console input
+            var consoleThread = new Thread(() =>
             {
-                string line = Console.ReadLine();
-                if (line == null)
-                    return;
-                string[] lineSplit = line.Split(' ');
-                switch(lineSplit[0])
+                try
                 {
-                    case "quit":
-                    case "exit":
-                    case "close":
-                    case "shutdown":
-                        return;
-                    case "info":
-                    case "infos":
-                    case "stats":
-                    case "statistics":
-                        DisplayStatistics(lineSplit.Length > 1 ? lineSplit[1] : "");
-                        break;
-                    case "route":
-                        HandleRouteCommand(lineSplit);
-                        break;
-                    case "test":
-                        HandleTestCommand(lineSplit);
-                        break;
-                    case "help":
-                        DisplayHelp();
-                        break;
+                    while (!shutdownEvent.IsSet)
+                    {
+                        string line = Console.ReadLine();
+                        if (line == null)
+                        {
+                            // EOF - console closed
+                            break;
+                        }
+
+                        string[] lineSplit = line.Split(' ');
+                        switch(lineSplit[0])
+                        {
+                            case "quit":
+                            case "exit":
+                            case "close":
+                            case "shutdown":
+                                shutdownEvent.Set();
+                                return;
+                            case "info":
+                            case "infos":
+                            case "stats":
+                            case "statistics":
+                                DisplayStatistics(lineSplit.Length > 1 ? lineSplit[1] : "");
+                                break;
+                            case "route":
+                                HandleRouteCommand(lineSplit);
+                                break;
+                            case "test":
+                                HandleTestCommand(lineSplit);
+                                break;
+                            case "help":
+                                DisplayHelp();
+                                break;
+                        }
+                    }
                 }
+                catch (Exception ex)
+                {
+                    // Console not available (e.g., running without console, or debugger attached)
+                    LogDebug($"Console thread stopped: {ex.Message}");
+                }
+            });
+            consoleThread.IsBackground = true;
+            consoleThread.Name = "ConsoleInput";
+            consoleThread.Start();
+
+            // Wait for shutdown signal (from console thread, web API, or external signal)
+            shutdownEvent.Wait();
+
+            if (RestartRequested)
+            {
+                Log("Exiting for restart...");
             }
         }
 
@@ -1015,6 +1079,8 @@ namespace BotFarm
 
             logger.Dispose();
             logger = null;
+
+            shutdownEvent.Dispose();
         }
 
         private void SaveBotInfos()
@@ -1102,6 +1168,62 @@ namespace BotFarm
         internal Services.ServiceContainer CreateServiceContainer()
         {
             return new Services.ServiceContainer(this, testCoordinator, suiteCoordinator);
+        }
+
+        /// <summary>
+        /// Request a restart of the application after disposal.
+        /// This sets a flag and signals the main loop to exit.
+        /// </summary>
+        public void RequestRestart()
+        {
+            Log("Restart requested - shutting down for restart");
+            RestartRequested = true;
+            shutdownEvent.Set();
+        }
+
+        /// <summary>
+        /// Wait for shutdown signal or console input
+        /// </summary>
+        public void WaitForShutdown()
+        {
+            shutdownEvent.Wait();
+        }
+
+        /// <summary>
+        /// Signal shutdown without restart
+        /// </summary>
+        public void SignalShutdown()
+        {
+            shutdownEvent.Set();
+        }
+
+        /// <summary>
+        /// Check if data paths are valid (not default and directories exist)
+        /// </summary>
+        private static bool ArePathsValid(string mmapsPath, string vmapsPath, string mapsPath, string dbcsPath)
+        {
+            return IsPathValid(mmapsPath) &&
+                   IsPathValid(vmapsPath) &&
+                   IsPathValid(mapsPath) &&
+                   IsPathValid(dbcsPath);
+        }
+
+        /// <summary>
+        /// Check if a single path is valid (not default and directory exists)
+        /// </summary>
+        private static bool IsPathValid(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            string trimmed = path.Trim();
+
+            // Check for default/placeholder values
+            if (trimmed == "C:\\" || trimmed == "C:/" || trimmed == "C:" || trimmed.Length <= 3)
+                return false;
+
+            // Check if directory exists
+            return Directory.Exists(trimmed);
         }
     }
 }
