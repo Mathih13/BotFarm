@@ -352,3 +352,4 @@ BotFarm/AI/TestMoveAI.cs
 # Note: These are built from tswow's TrinityCore fork
 !BotFarm/lib/
 !BotFarm/lib/*
+CLAUDE.md
