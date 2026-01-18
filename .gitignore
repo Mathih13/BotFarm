@@ -348,5 +348,7 @@ test-*.ps1
 test-*.cs
 BotFarm/AI/TestMoveAI.cs
 
-# Native libraries (user must copy manually)
-BotFarm/lib/
+# Native libraries - track these for CI builds
+# Note: These are built from tswow's TrinityCore fork
+!BotFarm/lib/
+!BotFarm/lib/*
