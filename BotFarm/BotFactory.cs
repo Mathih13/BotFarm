@@ -378,13 +378,20 @@ namespace BotFarm
 
             Log($"Creating test bot: {username}");
 
-            // Create account via RA with GM level 2 (will succeed if new, fail silently if exists)
+            // Create account via RA with GM level 3 (will succeed if new, fail silently if exists)
+            // GM level 3 required for .quest add/.quest complete commands
+            // Then set GM level explicitly in case account already existed with lower level
             if (remoteAccess != null)
             {
                 lock (remoteAccess)
                 {
-                    string response = remoteAccess.SendCommand($".account create {username} {testPassword} 2");
-                    Log($"RA create account {username} (GM level 2) response: {response}");
+                    string response = remoteAccess.SendCommand($".account create {username} {testPassword} 3");
+                    Log($"RA create account {username} response: {response}");
+
+                    // Set GM level explicitly - needed if account already existed from previous run
+                    // -1 means all realms
+                    string gmResponse = remoteAccess.SendCommand($".account set gmlevel {username} 3 -1");
+                    Log($"RA set gmlevel {username} to 3: {gmResponse}");
                 }
             }
             else

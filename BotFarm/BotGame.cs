@@ -339,14 +339,22 @@ namespace BotFarm
                 }
             }
 
-            // Complete prerequisite quests (add then complete to handle quests not in log)
+            // Complete prerequisite quests (add, complete objectives, then reward to fully finish)
             if (harnessSettings.CompletedQuests != null && harnessSettings.CompletedQuests.Count > 0)
             {
                 foreach (var questId in harnessSettings.CompletedQuests)
                 {
-                    Log($"Adding and completing quest {questId}");
+                    Log($"Adding quest {questId} to log...");
                     AddQuest(questId);
+                    // Wait for server to process the add before completing
+                    System.Threading.Thread.Sleep(500);
+                    Log($"Completing quest {questId} objectives...");
                     CompleteQuest(questId);
+                    System.Threading.Thread.Sleep(500);
+                    Log($"Rewarding quest {questId}...");
+                    RewardQuest(questId);
+                    // Wait for completion to process before next quest
+                    System.Threading.Thread.Sleep(500);
                 }
             }
 

@@ -21,7 +21,7 @@ import {
 } from '~/components/ui/collapsible'
 import { PositionEditor } from './shared/PositionEditor'
 import { ItemListEditor } from './shared/ItemListEditor'
-import { ArrayEditor } from './shared/ArrayEditor'
+import { QuestListEditor } from './shared/QuestListEditor'
 
 interface HarnessSectionProps {
   harness: HarnessFormData | null
@@ -246,10 +246,9 @@ export function HarnessSection({ harness, onChange }: HarnessSectionProps) {
               {/* Completed Quests */}
               <div className="space-y-2">
                 <Label>Pre-completed Quests</Label>
-                <ArrayEditor
-                  values={harness.completedQuests}
+                <QuestListEditor
+                  quests={harness.completedQuests}
                   onChange={(completedQuests: number[]) => updateHarness({ completedQuests })}
-                  placeholder="Quest ID"
                 />
               </div>
             </CollapsibleContent>

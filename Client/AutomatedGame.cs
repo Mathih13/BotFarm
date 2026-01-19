@@ -847,11 +847,21 @@ namespace Client
         }
 
         /// <summary>
-        /// Complete quest using GM command (requires GM level 2+)
+        /// Complete quest objectives using GM command (requires GM level 3+)
+        /// Note: This only completes objectives, use RewardQuest to fully finish
         /// </summary>
         public void CompleteQuest(uint questId)
         {
             DoSayChat($".quest complete {questId}");
+        }
+
+        /// <summary>
+        /// Reward/finish quest using GM command (requires GM level 3+)
+        /// This gives rewards and marks quest as completed
+        /// </summary>
+        public void RewardQuest(uint questId)
+        {
+            DoSayChat($".quest reward {questId}");
         }
 
         #endregion
