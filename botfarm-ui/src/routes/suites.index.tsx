@@ -120,9 +120,14 @@ function SuitesIndex() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Test Suites</h1>
-        <Button onClick={() => setShowNewSuite(true)}>
-          New Suite
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/suites/definitions">Manage Definitions</Link>
+          </Button>
+          <Button onClick={() => setShowNewSuite(true)}>
+            Run Suite
+          </Button>
+        </div>
       </div>
 
       {error && (

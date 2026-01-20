@@ -437,3 +437,45 @@ export interface PathValidationResponse {
   message: string;
   foundFiles: string[];
 }
+
+// ============ Suite Definition Editor Types ============
+
+export interface ApiSuiteDefinitionInfo {
+  path: string;
+  name: string;
+  testCount: number;
+}
+
+export interface ApiSuiteDefinitionDetail {
+  path: string;
+  name: string;
+  tests: ApiSuiteTestEntry[];
+  rawJson: string;
+}
+
+export interface ApiSuiteTestEntry {
+  route: string;
+  dependsOn: string[];
+}
+
+export interface CreateSuiteDefinitionRequest {
+  path: string;
+  content: string;
+}
+
+export interface UpdateSuiteDefinitionRequest {
+  content: string;
+}
+
+// ============ Suite Editor Form Types ============
+
+export interface SuiteFormData {
+  name: string;
+  tests: SuiteTestFormData[];
+}
+
+export interface SuiteTestFormData {
+  id: string;
+  route: string;
+  dependsOn: string[];
+}
