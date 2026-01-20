@@ -22,10 +22,10 @@ namespace BotFarm.AI.Combat
         private const float IMMOLATE_CAST_TIME = 2.0f;
         private const float DRAIN_LIFE_CHANNEL_TIME = 5.0f;
 
+        // Track DoTs applied this combat (server doesn't track debuffs on enemy)
         private bool hasCorruption = false;
         private bool hasImmolate = false;
         private bool hasCurseOfAgony = false;
-        private bool hasDemonSkin = false;
 
         public WarlockCombatAI()
         {
@@ -34,6 +34,9 @@ namespace BotFarm.AI.Combat
             restUntilHealthPercent = 80f;
             restUntilManaPercent = 70f;
         }
+
+        private bool HasActiveArmor(AutomatedGame game) => game.HasBuff(DEMON_SKIN);
+
 
         public override void OnCombatStart(AutomatedGame game, WorldObject target)
         {
@@ -48,48 +51,54 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return;
 
-            // Priority 1: Drain Life if health is low
-            if (player.HealthPercent < 40 && player.Mana >= 55)
+            if (!HasActiveArmor(game) && player.Mana >= 40)
+            {
+                TryCastSpellOnSelf(game, DEMON_SKIN);
+                return;
+            }
+
+            // Priority 1: Drain Life if health is low - level 14
+            if (player.Level >= 14 && player.HealthPercent < 40 && player.Mana >= 55)
             {
                 TryCastSpell(game, DRAIN_LIFE, target.GUID, DRAIN_LIFE_CHANNEL_TIME);
                 return;
             }
 
-            // Priority 2: Life Tap if low mana but healthy
-            if (player.ManaPercent < 20 && player.HealthPercent > 50)
+            // Priority 2: Life Tap if low mana but healthy - level 6
+            if (player.Level >= 6 && player.ManaPercent < 20 && player.HealthPercent > 50)
             {
-                game.CastSpellOnSelf(LIFE_TAP);
+                TryCastSpellOnSelf(game, LIFE_TAP);
                 return;
             }
 
-            // Priority 3: Corruption if not applied (instant)
-            if (!hasCorruption && player.Mana >= 35)
+            // Priority 3: Corruption if not applied (instant) - level 4
+            if (player.Level >= 4 && !hasCorruption && player.Mana >= 35)
             {
-                game.CastSpell(CORRUPTION, target.GUID);
+                TryCastSpell(game, CORRUPTION, target.GUID);
                 hasCorruption = true;
                 return;
             }
 
-            // Priority 4: Immolate if not applied
-            if (!hasImmolate && player.Mana >= 50)
+            // Priority 4: Immolate if not applied - level 1 (costs ~25 mana at rank 1)
+            if (!hasImmolate && player.Mana >= 25)
             {
                 TryCastSpell(game, IMMOLATE, target.GUID, IMMOLATE_CAST_TIME);
                 hasImmolate = true;
                 return;
             }
 
-            // Priority 5: Curse of Agony if not applied (instant)
-            if (!hasCurseOfAgony && player.Mana >= 25)
+            // Priority 5: Curse of Agony if not applied (instant) - level 8
+            if (player.Level >= 8 && !hasCurseOfAgony && player.Mana >= 25)
             {
-                game.CastSpell(CURSE_OF_AGONY, target.GUID);
+                TryCastSpell(game, CURSE_OF_AGONY, target.GUID);
                 hasCurseOfAgony = true;
                 return;
             }
 
-            // Priority 6: Shadow Bolt as filler
+            // Priority 6: Shadow Bolt as filler - level 1
             if (player.Mana >= 25)
             {
                 TryCastSpell(game, SHADOW_BOLT, target.GUID, SHADOW_BOLT_CAST_TIME);
@@ -112,20 +121,19 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return false;
 
-            // Buff Demon Skin if not active
-            if (!hasDemonSkin && player.Mana >= 40)
+            // Buff Demon Skin if not active (uses server aura state) - level 1
+            if (!game.HasBuff(DEMON_SKIN) && player.Mana >= 40)
             {
-                game.CastSpellOnSelf(DEMON_SKIN);
-                hasDemonSkin = true;
+                TryCastSpellOnSelf(game, DEMON_SKIN);
             }
 
-            // Life Tap to restore mana if healthy
-            if (player.ManaPercent < restUntilManaPercent && player.HealthPercent > 60)
+            // Life Tap to restore mana if healthy - level 6
+            if (player.Level >= 6 && player.ManaPercent < restUntilManaPercent && player.HealthPercent > 60)
             {
-                game.CastSpellOnSelf(LIFE_TAP);
+                TryCastSpellOnSelf(game, LIFE_TAP);
                 return false;
             }
 

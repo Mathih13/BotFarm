@@ -247,6 +247,29 @@ namespace Client
         /// Random number generator for character creation
         /// </summary>
         protected static Random CharacterRandom { get; } = new Random();
+
+        // Spell cooldown tracking (server-authoritative)
+        /// <summary>
+        /// Tracks spell cooldowns from the server. Key is spellId, value is when cooldown expires.
+        /// </summary>
+        protected Dictionary<uint, DateTime> SpellCooldowns { get; } = new Dictionary<uint, DateTime>();
+
+        // Casting state (server-authoritative)
+        /// <summary>
+        /// True if the player is currently casting a spell (set by SMSG_SPELL_START, cleared by SMSG_SPELL_GO/FAILURE)
+        /// </summary>
+        public bool IsCastingSpell { get; protected set; }
+
+        /// <summary>
+        /// The spell ID currently being cast (0 if not casting)
+        /// </summary>
+        public uint CurrentCastSpellId { get; protected set; }
+
+        // Aura/buff tracking (server-authoritative)
+        /// <summary>
+        /// Active auras on the player. Key is the aura slot (0-255), value is the aura info.
+        /// </summary>
+        protected Dictionary<byte, AuraInfo> ActiveAuras { get; } = new Dictionary<byte, AuraInfo>();
         #endregion
 
         public AutomatedGame(string hostname, int port, string username, string password, int realmId, int character)
@@ -866,6 +889,94 @@ namespace Client
 
         #endregion
 
+        #endregion
+
+        #region Spell and Aura State
+        /// <summary>
+        /// Checks if a spell is currently on cooldown.
+        /// </summary>
+        /// <param name="spellId">The spell ID to check</param>
+        /// <returns>True if the spell is on cooldown, false otherwise</returns>
+        public bool IsSpellOnCooldown(uint spellId)
+        {
+            if (SpellCooldowns.TryGetValue(spellId, out DateTime cooldownEnd))
+            {
+                if (DateTime.Now < cooldownEnd)
+                    return true;
+                // Cooldown expired, clean it up
+                SpellCooldowns.Remove(spellId);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Gets the remaining cooldown time for a spell in seconds.
+        /// </summary>
+        /// <param name="spellId">The spell ID to check</param>
+        /// <returns>Remaining cooldown in seconds, or 0 if not on cooldown</returns>
+        public float GetSpellCooldownRemaining(uint spellId)
+        {
+            if (SpellCooldowns.TryGetValue(spellId, out DateTime cooldownEnd))
+            {
+                var remaining = cooldownEnd - DateTime.Now;
+                if (remaining.TotalSeconds > 0)
+                    return (float)remaining.TotalSeconds;
+                // Cooldown expired, clean it up
+                SpellCooldowns.Remove(spellId);
+            }
+            return 0f;
+        }
+
+        /// <summary>
+        /// Checks if the player currently has a specific buff/aura active.
+        /// </summary>
+        /// <param name="spellId">The spell ID of the buff to check for</param>
+        /// <returns>True if the buff is active, false otherwise</returns>
+        public bool HasBuff(uint spellId)
+        {
+            foreach (var aura in ActiveAuras.Values)
+            {
+                if (aura.SpellId == spellId)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Gets information about a specific buff/aura on the player.
+        /// </summary>
+        /// <param name="spellId">The spell ID of the buff to get</param>
+        /// <returns>The AuraInfo if found, null otherwise</returns>
+        public AuraInfo GetBuff(uint spellId)
+        {
+            foreach (var aura in ActiveAuras.Values)
+            {
+                if (aura.SpellId == spellId)
+                    return aura;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Gets all active buffs/auras on the player.
+        /// </summary>
+        /// <returns>Collection of all active auras</returns>
+        public IEnumerable<AuraInfo> GetAllBuffs()
+        {
+            return ActiveAuras.Values;
+        }
+
+        /// <summary>
+        /// Clears all tracked spell cooldowns and auras.
+        /// Called on logout/disconnect.
+        /// </summary>
+        protected void ClearSpellState()
+        {
+            SpellCooldowns.Clear();
+            ActiveAuras.Clear();
+            IsCastingSpell = false;
+            CurrentCastSpellId = 0;
+        }
         #endregion
 
         #region Actions
@@ -2040,6 +2151,243 @@ namespace Client
             // Combat log update - silently accept for now
             // Could be used to track damage dealt/received
         }
+
+        #region Spell State Handlers
+        [PacketHandler(WorldCommand.SMSG_SPELL_START)]
+        protected void HandleSpellStart(InPacket packet)
+        {
+            // SMSG_SPELL_START structure:
+            // packedGuid casterGuid
+            // packedGuid casterUnitGuid
+            // uint8 castCount
+            // uint32 spellId
+            // uint32 castFlags
+            // uint32 castTimeMs
+            // ... target info
+            var casterGuid = packet.ReadPackedGuid();
+            var casterUnitGuid = packet.ReadPackedGuid();
+            var castCount = packet.ReadByte();
+            var spellId = packet.ReadUInt32();
+
+            // Only track our own casts
+            if (casterGuid == Player.GUID || casterUnitGuid == Player.GUID)
+            {
+                IsCastingSpell = true;
+                CurrentCastSpellId = spellId;
+                Log($"Spell cast started: {spellId}", LogLevel.Debug);
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_SPELL_GO)]
+        protected void HandleSpellGo(InPacket packet)
+        {
+            // SMSG_SPELL_GO structure:
+            // packedGuid casterGuid
+            // packedGuid casterUnitGuid
+            // uint8 castCount
+            // uint32 spellId
+            // uint32 castFlags
+            // uint32 serverTime
+            // ... hit/miss info
+            var casterGuid = packet.ReadPackedGuid();
+            var casterUnitGuid = packet.ReadPackedGuid();
+            var castCount = packet.ReadByte();
+            var spellId = packet.ReadUInt32();
+
+            // Only track our own casts
+            if (casterGuid == Player.GUID || casterUnitGuid == Player.GUID)
+            {
+                // Cast completed successfully
+                if (CurrentCastSpellId == spellId)
+                {
+                    IsCastingSpell = false;
+                    CurrentCastSpellId = 0;
+                    Log($"Spell cast completed: {spellId}", LogLevel.Debug);
+                }
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_SPELL_FAILURE)]
+        protected void HandleSpellFailure(InPacket packet)
+        {
+            // SMSG_SPELL_FAILURE structure:
+            // packedGuid casterGuid
+            // uint8 castCount
+            // uint32 spellId
+            // uint8 failReason
+            var casterGuid = packet.ReadPackedGuid();
+            var castCount = packet.ReadByte();
+            var spellId = packet.ReadUInt32();
+            var failReason = packet.ReadByte();
+
+            // Only track our own casts
+            if (casterGuid == Player.GUID)
+            {
+                if (CurrentCastSpellId == spellId)
+                {
+                    IsCastingSpell = false;
+                    CurrentCastSpellId = 0;
+                    Log($"Spell cast failed: {spellId}, reason: {failReason}", LogLevel.Debug);
+                }
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_SPELL_FAILED_OTHER)]
+        protected void HandleSpellFailedOther(InPacket packet)
+        {
+            // Similar structure to SPELL_FAILURE but for other casters
+            // We only care if it's our own spell
+            var casterGuid = packet.ReadPackedGuid();
+            var castCount = packet.ReadByte();
+            var spellId = packet.ReadUInt32();
+
+            if (casterGuid == Player.GUID)
+            {
+                if (CurrentCastSpellId == spellId)
+                {
+                    IsCastingSpell = false;
+                    CurrentCastSpellId = 0;
+                    Log($"Spell cast failed (other): {spellId}", LogLevel.Debug);
+                }
+            }
+        }
+
+        [PacketHandler(WorldCommand.SMSG_SPELL_COOLDOWN)]
+        protected void HandleSpellCooldown(InPacket packet)
+        {
+            // SMSG_SPELL_COOLDOWN structure:
+            // uint64 playerGuid
+            // uint8 flags
+            // [repeating until end:]
+            //   uint32 spellId
+            //   uint32 cooldownMs
+            var playerGuid = packet.ReadUInt64();
+            var flags = packet.ReadByte();
+
+            // Only track our own cooldowns
+            if (playerGuid != Player.GUID)
+                return;
+
+            while (packet.BaseStream.Length - packet.BaseStream.Position >= 8)
+            {
+                var spellId = packet.ReadUInt32();
+                var cooldownMs = packet.ReadUInt32();
+
+                if (cooldownMs > 0)
+                {
+                    SpellCooldowns[spellId] = DateTime.Now.AddMilliseconds(cooldownMs);
+                    Log($"Spell cooldown: {spellId} for {cooldownMs}ms", LogLevel.Debug);
+                }
+                else
+                {
+                    // Cooldown cleared
+                    SpellCooldowns.Remove(spellId);
+                }
+            }
+        }
+        #endregion
+
+        #region Aura State Handlers
+        [PacketHandler(WorldCommand.SMSG_AURA_UPDATE)]
+        protected void HandleAuraUpdate(InPacket packet)
+        {
+            // SMSG_AURA_UPDATE structure:
+            // packedGuid unitGuid
+            // [repeating:]
+            //   uint8 slot
+            //   uint32 spellId (0 = remove)
+            //   if spellId != 0:
+            //     uint8 flags
+            //     uint8 level
+            //     uint8 stackCount
+            //     if !(flags & NOT_CASTER): packedGuid casterGuid
+            //     if (flags & DURATION):
+            //       int32 maxDuration
+            //       int32 duration
+            var unitGuid = packet.ReadPackedGuid();
+
+            // Only track our own auras
+            if (unitGuid != Player.GUID)
+                return;
+
+            ParseAuraUpdates(packet);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_AURA_UPDATE_ALL)]
+        protected void HandleAuraUpdateAll(InPacket packet)
+        {
+            // Same structure as AURA_UPDATE but sent on login/spawn with all auras
+            var unitGuid = packet.ReadPackedGuid();
+
+            // Only track our own auras
+            if (unitGuid != Player.GUID)
+                return;
+
+            // Clear existing auras and parse all from packet
+            ActiveAuras.Clear();
+            ParseAuraUpdates(packet);
+        }
+
+        /// <summary>
+        /// Parses aura update entries from a packet (shared by both AURA_UPDATE and AURA_UPDATE_ALL)
+        /// </summary>
+        private void ParseAuraUpdates(InPacket packet)
+        {
+            // Helper to get remaining bytes in packet
+            long RemainingBytes() => packet.BaseStream.Length - packet.BaseStream.Position;
+
+            while (RemainingBytes() >= 5) // minimum: 1 byte slot + 4 byte spellId
+            {
+                var slot = packet.ReadByte();
+                var spellId = packet.ReadUInt32();
+
+                if (spellId == 0)
+                {
+                    // Remove aura from slot
+                    if (ActiveAuras.Remove(slot))
+                    {
+                        Log($"Aura removed from slot {slot}", LogLevel.Debug);
+                    }
+                    continue;
+                }
+
+                // Create new aura info
+                var aura = new AuraInfo
+                {
+                    Slot = slot,
+                    SpellId = spellId
+                };
+
+                // Read flags
+                if (RemainingBytes() >= 1)
+                    aura.Flags = packet.ReadByte();
+
+                // Read level
+                if (RemainingBytes() >= 1)
+                    aura.Level = packet.ReadByte();
+
+                // Read stack count
+                if (RemainingBytes() >= 1)
+                    aura.StackCount = packet.ReadByte();
+
+                // Read caster if present (NOT_CASTER flag not set)
+                if ((aura.Flags & AuraInfo.AFLAG_NOT_CASTER) == 0 && RemainingBytes() >= 1)
+                {
+                    aura.CasterGuid = packet.ReadPackedGuid();
+                }
+
+                // Read duration if present
+                if ((aura.Flags & AuraInfo.AFLAG_DURATION) != 0 && RemainingBytes() >= 8)
+                {
+                    aura.MaxDuration = packet.ReadInt32();
+                    aura.Duration = packet.ReadInt32();
+                }
+
+                ActiveAuras[slot] = aura;
+                Log($"Aura applied: spell {spellId} in slot {slot}", LogLevel.Debug);
+            }
+        }
+        #endregion
 
         #region Loot Handlers
         [PacketHandler(WorldCommand.SMSG_LOOT_RESPONSE)]

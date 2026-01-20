@@ -53,9 +53,22 @@ namespace BotFarm.AI.Combat
         protected float restUntilHealthPercent = 80f;
         protected float restUntilManaPercent = 80f;
 
-        // Cast tracking to prevent restarting casts
+        // Fallback cast tracking (used when server state not yet received)
         protected DateTime castEndTime = DateTime.MinValue;
-        protected bool IsCasting => DateTime.Now < castEndTime;
+
+        /// <summary>
+        /// Checks if the player is currently casting a spell.
+        /// Uses server-authoritative state (IsCastingSpell) when available,
+        /// with fallback to local tracking for compatibility.
+        /// </summary>
+        protected bool IsCasting(AutomatedGame game)
+        {
+            // Prefer server-authoritative state
+            if (game.IsCastingSpell)
+                return true;
+            // Fallback to local tracking for cases where server packets haven't arrived yet
+            return DateTime.Now < castEndTime;
+        }
 
         public virtual void OnCombatStart(AutomatedGame game, WorldObject target)
         {
@@ -74,14 +87,14 @@ namespace BotFarm.AI.Combat
         {
             // Default rest logic - wait until health/mana are restored
             var player = game.Player;
-            
+
             if (player.HealthPercent < restUntilHealthPercent)
                 return false;
-            
+
             // Only check mana for classes that use it
             if (player.MaxMana > 0 && player.ManaPercent < restUntilManaPercent)
                 return false;
-            
+
             return true;
         }
 
@@ -93,56 +106,82 @@ namespace BotFarm.AI.Combat
         public virtual bool NeedsRest(AutomatedGame game)
         {
             var player = game.Player;
-            
+
             // Rest if low health
             if (player.HealthPercent < lowHealthThreshold)
                 return true;
-            
+
             // Rest if low mana (for mana users)
             if (player.MaxMana > 0 && player.ManaPercent < lowManaThreshold)
                 return true;
-            
+
             return false;
         }
 
         /// <summary>
         /// Helper to check if a spell can be cast (cooldown, mana, etc.)
-        /// For now just checks mana cost
+        /// Checks both mana cost and server-authoritative cooldown state.
         /// </summary>
-        protected bool CanCastSpell(AutomatedGame game, uint manaCost)
+        /// <param name="game">The game instance</param>
+        /// <param name="spellId">The spell ID to check</param>
+        /// <param name="manaCost">Mana cost of the spell</param>
+        protected bool CanCastSpell(AutomatedGame game, uint spellId, uint manaCost)
         {
-            return game.Player.Mana >= manaCost;
-        }
-
-        /// <summary>
-        /// Cast a spell on self with cast time tracking.
-        /// Returns true if cast was initiated, false if already casting.
-        /// </summary>
-        /// <param name="castTimeSeconds">Cast time in seconds (0 for instant)</param>
-        protected bool TryCastSpellOnSelf(AutomatedGame game, uint spellId, float castTimeSeconds = 0f)
-        {
-            if (IsCasting)
+            if (game.Player.Mana < manaCost)
                 return false;
-
-            game.CastSpellOnSelf(spellId);
-            if (castTimeSeconds > 0)
-                castEndTime = DateTime.Now.AddSeconds(castTimeSeconds);
+            if (game.IsSpellOnCooldown(spellId))
+                return false;
             return true;
         }
 
         /// <summary>
-        /// Cast a spell on target with cast time tracking.
-        /// Returns true if cast was initiated, false if already casting.
+        /// Cast a spell on self with cooldown and cast state tracking.
+        /// Returns true if cast was initiated, false if already casting or on cooldown.
         /// </summary>
-        /// <param name="castTimeSeconds">Cast time in seconds (0 for instant)</param>
+        /// <param name="game">The game instance</param>
+        /// <param name="spellId">The spell ID to cast</param>
+        /// <param name="castTimeSeconds">Cast time in seconds (0 for instant). Used as fallback tracking.</param>
+        protected bool TryCastSpellOnSelf(AutomatedGame game, uint spellId, float castTimeSeconds = 0f)
+        {
+            if (IsCasting(game))
+                return false;
+
+            // Check cooldown
+            if (game.IsSpellOnCooldown(spellId))
+                return false;
+
+            game.CastSpellOnSelf(spellId);
+            // Set short fallback to cover network round-trip until server confirms cast start
+            // Server will set IsCastingSpell=true via SMSG_SPELL_START, or clear via SMSG_SPELL_FAILURE
+            // We only need fallback for the brief period before server response arrives
+            if (castTimeSeconds > 0)
+                castEndTime = DateTime.Now.AddSeconds(0.5);
+            return true;
+        }
+
+        /// <summary>
+        /// Cast a spell on target with cooldown and cast state tracking.
+        /// Returns true if cast was initiated, false if already casting or on cooldown.
+        /// </summary>
+        /// <param name="game">The game instance</param>
+        /// <param name="spellId">The spell ID to cast</param>
+        /// <param name="targetGuid">The target GUID</param>
+        /// <param name="castTimeSeconds">Cast time in seconds (0 for instant). Used as fallback tracking.</param>
         protected bool TryCastSpell(AutomatedGame game, uint spellId, ulong targetGuid, float castTimeSeconds = 0f)
         {
-            if (IsCasting)
+            if (IsCasting(game))
+                return false;
+
+            // Check cooldown
+            if (game.IsSpellOnCooldown(spellId))
                 return false;
 
             game.CastSpell(spellId, targetGuid);
+            // Set short fallback to cover network round-trip until server confirms cast start
+            // Server will set IsCastingSpell=true via SMSG_SPELL_START, or clear via SMSG_SPELL_FAILURE
+            // We only need fallback for the brief period before server response arrives
             if (castTimeSeconds > 0)
-                castEndTime = DateTime.Now.AddSeconds(castTimeSeconds);
+                castEndTime = DateTime.Now.AddSeconds(0.5);
             return true;
         }
     }

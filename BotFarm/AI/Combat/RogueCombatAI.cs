@@ -15,8 +15,7 @@ namespace BotFarm.AI.Combat
         private const uint SLICE_AND_DICE = 5171;    // Attack speed buff (level 10)
         private const uint EVASION = 5277;           // Dodge buff (level 8)
 
-        private bool hasSliceAndDice = false;
-        private bool hasUsedEvasion = false;
+        // Track combo points locally (server doesn't send this directly)
         private int comboPoints = 0;
 
         public RogueCombatAI()
@@ -29,8 +28,6 @@ namespace BotFarm.AI.Combat
         {
             base.OnCombatStart(game, target);
             comboPoints = 0;
-            hasSliceAndDice = false;
-            hasUsedEvasion = false;
         }
 
         public override void OnCombatUpdate(AutomatedGame game, WorldObject target)
@@ -38,26 +35,24 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
             uint energy = player.Energy;
 
-            // Priority 1: Evasion if health is critical
-            if (!hasUsedEvasion && player.HealthPercent < 30)
+            // Priority 1: Evasion if health is critical (uses server aura state and cooldown)
+            if (player.HealthPercent < 30 && !game.HasBuff(EVASION) && !game.IsSpellOnCooldown(EVASION))
             {
                 game.CastSpellOnSelf(EVASION);
-                hasUsedEvasion = true;
                 return;
             }
 
             // Priority 2: Gouge if health is very low (buy time)
-            if (player.HealthPercent < 25 && energy >= 45)
+            if (player.HealthPercent < 25 && energy >= 45 && !game.IsSpellOnCooldown(GOUGE))
             {
                 game.CastSpell(GOUGE, target.GUID);
                 return;
             }
 
-            // Priority 3: Slice and Dice if not active and we have 2+ combo points
-            if (!hasSliceAndDice && comboPoints >= 2 && energy >= 25)
+            // Priority 3: Slice and Dice if not active and we have 2+ combo points (uses server aura state)
+            if (!game.HasBuff(SLICE_AND_DICE) && comboPoints >= 2 && energy >= 25)
             {
                 game.CastSpellOnSelf(SLICE_AND_DICE);
-                hasSliceAndDice = true;
                 comboPoints = 0;
                 return;
             }
@@ -86,8 +81,6 @@ namespace BotFarm.AI.Combat
         {
             base.OnCombatEnd(game);
             comboPoints = 0;
-            hasSliceAndDice = false;
-            hasUsedEvasion = false;
         }
 
         public override bool NeedsRest(AutomatedGame game)

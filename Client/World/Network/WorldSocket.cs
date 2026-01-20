@@ -74,11 +74,11 @@ namespace Client.World.Network
             WorldCommand.SMSG_INITIALIZE_FACTIONS,
             WorldCommand.SMSG_SET_FORCED_REACTIONS,
             WorldCommand.SMSG_COMPRESSED_UPDATE_OBJECT,
-            WorldCommand.SMSG_AURA_UPDATE,
             WorldCommand.SMSG_DESTROY_OBJECT,
             WorldCommand.SMSG_MONSTER_MOVE,
-            WorldCommand.SMSG_SPELL_GO,
-            WorldCommand.SMSG_AURA_UPDATE_ALL,
+            // SMSG_SPELL_GO - now handled for cast completion tracking
+            // SMSG_AURA_UPDATE - now handled for buff tracking
+            // SMSG_AURA_UPDATE_ALL - now handled for buff tracking
             WorldCommand.SMSG_AI_REACTION,
             WorldCommand.SMSG_HIGHEST_THREAT_UPDATE,
             WorldCommand.SMSG_THREAT_UPDATE,
@@ -92,7 +92,7 @@ namespace Client.World.Network
             WorldCommand.MSG_MOVE_STOP_TURN,
             WorldCommand.MSG_MOVE_HEARTBEAT,
             WorldCommand.MSG_MOVE_FALL_LAND,
-            WorldCommand.SMSG_SPELL_START,
+            // SMSG_SPELL_START - now handled for cast start tracking
             WorldCommand.SMSG_SPELLHEALLOG,
             WorldCommand.SMSG_ATTACK_START,
             WorldCommand.SMSG_ATTACKERSTATEUPDATE,
@@ -106,8 +106,8 @@ namespace Client.World.Network
             WorldCommand.SMSG_THREAT_CLEAR,
             WorldCommand.SMSG_GM_MESSAGECHAT,
             WorldCommand.SMSG_SET_FLAT_SPELL_MODIFIER,
-            WorldCommand.SMSG_SPELL_FAILURE,
-            WorldCommand.SMSG_SPELL_FAILED_OTHER,
+            // SMSG_SPELL_FAILURE - now handled for cast failure tracking
+            // SMSG_SPELL_FAILED_OTHER - now handled for cast failure tracking
             WorldCommand.SMSG_MONSTER_MOVE_TRANSPORT,
             WorldCommand.SMSG_MOVE_WATER_WALK,
             WorldCommand.SMSG_BREAK_TARGET,
