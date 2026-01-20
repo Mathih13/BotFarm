@@ -57,17 +57,17 @@ namespace BotFarm.AI.Combat
                 return;
             }
 
-            // Priority 3: Frostbolt (preferred for slow + damage)
-            if (player.Mana >= 25)
-            {
-                TryCastSpell(game, FROSTBOLT, target.GUID, FROSTBOLT_CAST_TIME);
-                return;
-            }
-
-            // Priority 4: Fireball as filler
+            // Priority 3: Fireball as filler (higher mana cost, check first)
             if (player.Mana >= 30)
             {
                 TryCastSpell(game, FIREBALL, target.GUID, FIREBALL_CAST_TIME);
+                return;
+            }
+
+            // Priority 4: Frostbolt (preferred for slow + damage)
+            if (player.Mana >= 25)
+            {
+                TryCastSpell(game, FROSTBOLT, target.GUID, FROSTBOLT_CAST_TIME);
                 return;
             }
 
