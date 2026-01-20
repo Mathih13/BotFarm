@@ -150,12 +150,16 @@ export function useTestRunEvents(handlers: {
       handlersRef.current.onTaskCompleted?.(event);
     };
 
+    // Register handlers immediately (works even before connection is established)
     conn.on('testRunStarted', onTestRunStarted);
     conn.on('testRunCompleted', onTestRunCompleted);
     conn.on('testRunStatus', onTestRunStatus);
     conn.on('botCompleted', onBotCompleted);
     conn.on('taskStarted', onTaskStarted);
     conn.on('taskCompleted', onTaskCompleted);
+
+    // Ensure connection is established
+    ensureConnected().catch(console.error);
 
     return () => {
       conn.off('testRunStarted', onTestRunStarted);
@@ -198,10 +202,14 @@ export function useSuiteEvents(handlers: {
       handlersRef.current.onSuiteStatus?.(suite);
     };
 
+    // Register handlers immediately (works even before connection is established)
     conn.on('suiteStarted', onSuiteStarted);
     conn.on('suiteCompleted', onSuiteCompleted);
     conn.on('suiteTestCompleted', onSuiteTestCompleted);
     conn.on('suiteStatus', onSuiteStatus);
+
+    // Ensure connection is established
+    ensureConnected().catch(console.error);
 
     return () => {
       conn.off('suiteStarted', onSuiteStarted);
