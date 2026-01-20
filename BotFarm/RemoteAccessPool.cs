@@ -60,25 +60,28 @@ namespace BotFarm
             }
 
             // Create a new connection if we haven't hit the max
-            int newSize = Interlocked.Increment(ref currentSize);
-            if (newSize <= maxSize)
+            lock (available)
             {
-                var newConnection = new RemoteAccess(hostname, port, username, password);
-                if (!newConnection.Connect())
+                int newSize = Interlocked.Increment(ref currentSize);
+                if (newSize <= maxSize)
                 {
-                    Console.WriteLine($"RemoteAccessPool: Failed to create connection #{newSize}");
-                    // Still return it - SendCommand will try to reconnect
+                    var newConnection = new RemoteAccess(hostname, port, username, password);
+                    if (!newConnection.Connect())
+                    {
+                        Console.WriteLine($"RemoteAccessPool: Failed to create connection #{newSize}");
+                        // Still return it - SendCommand will try to reconnect
+                    }
+                    else
+                    {
+                        Console.WriteLine($"RemoteAccessPool: Created connection #{newSize}");
+                    }
+                    return newConnection;
                 }
-                else
-                {
-                    Console.WriteLine($"RemoteAccessPool: Created connection #{newSize}");
-                }
-                return newConnection;
-            }
 
-            // Shouldn't reach here with proper semaphore usage, but handle gracefully
-            Interlocked.Decrement(ref currentSize);
-            throw new InvalidOperationException("Pool exhausted - this should not happen");
+                // Over limit - decrement and throw
+                Interlocked.Decrement(ref currentSize);
+                throw new InvalidOperationException("Pool exhausted - this should not happen");
+            }
         }
 
         /// <summary>
