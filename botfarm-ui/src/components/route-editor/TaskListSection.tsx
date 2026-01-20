@@ -1,22 +1,36 @@
 import { useState } from 'react'
+import { Plus } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import type { TaskFormData, TaskType } from '~/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select'
-import { TaskEditor } from './TaskEditor'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '~/components/ui/popover'
+import { SortableTaskEditor } from './SortableTaskEditor'
 
 interface TaskListSectionProps {
   tasks: TaskFormData[]
   onChange: (tasks: TaskFormData[]) => void
 }
 
-const TASK_TYPES: { type: TaskType; label: string; category: string }[] = [
+export const TASK_TYPES: { type: TaskType; label: string; category: string }[] = [
   { type: 'Wait', label: 'Wait', category: 'Utility' },
   { type: 'LogMessage', label: 'Log Message', category: 'Utility' },
   { type: 'MoveToLocation', label: 'Move to Location', category: 'Movement' },
@@ -38,7 +52,7 @@ function generateTaskId(): string {
   return `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-function getDefaultParameters(type: TaskType): Record<string, unknown> {
+export function getDefaultParameters(type: TaskType): Record<string, unknown> {
   switch (type) {
     case 'Wait':
       return { seconds: 1 }
@@ -74,18 +88,38 @@ function getDefaultParameters(type: TaskType): Record<string, unknown> {
   }
 }
 
-export function TaskListSection({ tasks, onChange }: TaskListSectionProps) {
-  const [newTaskType, setNewTaskType] = useState<TaskType>('Wait')
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+// Group task types by category for the popover
+const groupedTaskTypes = TASK_TYPES.reduce(
+  (acc, task) => {
+    if (!acc[task.category]) {
+      acc[task.category] = []
+    }
+    acc[task.category].push(task)
+    return acc
+  },
+  {} as Record<string, typeof TASK_TYPES>
+)
 
-  const addTask = () => {
+export function TaskListSection({ tasks, onChange }: TaskListSectionProps) {
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+  const [isAddPopoverOpen, setIsAddPopoverOpen] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  const addTask = (type: TaskType) => {
     const newTask: TaskFormData = {
       id: generateTaskId(),
-      type: newTaskType,
-      parameters: getDefaultParameters(newTaskType),
+      type,
+      parameters: getDefaultParameters(type),
     }
     onChange([...tasks, newTask])
     setExpandedTasks((prev) => new Set([...prev, newTask.id]))
+    setIsAddPopoverOpen(false)
   }
 
   const removeTask = (id: string) => {
@@ -101,14 +135,14 @@ export function TaskListSection({ tasks, onChange }: TaskListSectionProps) {
     onChange(tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)))
   }
 
-  const moveTask = (index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1
-    if (newIndex < 0 || newIndex >= tasks.length) return
-
-    const newTasks = [...tasks]
-    const [task] = newTasks.splice(index, 1)
-    newTasks.splice(newIndex, 0, task)
-    onChange(newTasks)
+  const updateTaskType = (id: string, newType: TaskType) => {
+    onChange(
+      tasks.map((t) =>
+        t.id === id
+          ? { ...t, type: newType, parameters: getDefaultParameters(newType) }
+          : t
+      )
+    )
   }
 
   const toggleExpanded = (id: string) => {
@@ -136,57 +170,89 @@ export function TaskListSection({ tasks, onChange }: TaskListSectionProps) {
     setExpandedTasks((prev) => new Set([...prev, newTask.id]))
   }
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = tasks.findIndex((t) => t.id === active.id)
+      const newIndex = tasks.findIndex((t) => t.id === over.id)
+      onChange(arrayMove(tasks, oldIndex, newIndex))
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Tasks ({tasks.length})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Add Task */}
-        <div className="flex gap-2">
-          <Select
-            value={newTaskType}
-            onValueChange={(value) => setNewTaskType(value as TaskType)}
-          >
-            <SelectTrigger className="flex-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TASK_TYPES.map((task) => (
-                <SelectItem key={task.type} value={task.type}>
-                  <span className="text-muted-foreground text-xs mr-2">[{task.category}]</span>
-                  {task.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button onClick={addTask}>Add Task</Button>
-        </div>
-
         {/* Task List */}
         {tasks.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No tasks yet. Add a task to get started.
           </p>
         ) : (
-          <div className="space-y-2">
-            {tasks.map((task, index) => (
-              <TaskEditor
-                key={task.id}
-                task={task}
-                index={index}
-                totalTasks={tasks.length}
-                isExpanded={expandedTasks.has(task.id)}
-                onToggleExpanded={() => toggleExpanded(task.id)}
-                onUpdate={(updates) => updateTask(task.id, updates)}
-                onRemove={() => removeTask(task.id)}
-                onMoveUp={() => moveTask(index, 'up')}
-                onMoveDown={() => moveTask(index, 'down')}
-                onDuplicate={() => duplicateTask(task)}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={tasks.map((t) => t.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-2">
+                {tasks.map((task, index) => (
+                  <SortableTaskEditor
+                    key={task.id}
+                    task={task}
+                    index={index}
+                    totalTasks={tasks.length}
+                    isExpanded={expandedTasks.has(task.id)}
+                    onToggleExpanded={() => toggleExpanded(task.id)}
+                    onUpdate={(updates) => updateTask(task.id, updates)}
+                    onRemove={() => removeTask(task.id)}
+                    onDuplicate={() => duplicateTask(task)}
+                    onTypeChange={(newType) => updateTaskType(task.id, newType)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
+
+        {/* Add Task Button */}
+        <div className="flex justify-center pt-2">
+          <Popover open={isAddPopoverOpen} onOpenChange={setIsAddPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon" className="rounded-full">
+                <Plus className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="center">
+              <div className="space-y-2">
+                {Object.entries(groupedTaskTypes).map(([category, types]) => (
+                  <div key={category}>
+                    <div className="text-xs font-medium text-muted-foreground px-2 py-1">
+                      {category}
+                    </div>
+                    <div className="space-y-0.5">
+                      {types.map((t) => (
+                        <button
+                          key={t.type}
+                          onClick={() => addTask(t.type)}
+                          className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted transition-colors"
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </CardContent>
     </Card>
   )

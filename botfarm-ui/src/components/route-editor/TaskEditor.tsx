@@ -1,8 +1,15 @@
 import { useEffect } from 'react'
-import type { TaskFormData, EntityType } from '~/lib/types'
+import { GripVertical } from 'lucide-react'
+import type { TaskFormData, EntityType, TaskType } from '~/lib/types'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent } from '~/components/ui/card'
-import { Badge } from '~/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select'
 import {
   Collapsible,
   CollapsibleContent,
@@ -10,6 +17,7 @@ import {
 } from '~/components/ui/collapsible'
 import { getTaskForm } from './task-forms'
 import { useEntityNames, formatEntity } from './shared/useEntityNames'
+import { TASK_TYPES } from './TaskListSection'
 
 interface TaskEditorProps {
   task: TaskFormData
@@ -19,9 +27,9 @@ interface TaskEditorProps {
   onToggleExpanded: () => void
   onUpdate: (updates: Partial<TaskFormData>) => void
   onRemove: () => void
-  onMoveUp: () => void
-  onMoveDown: () => void
   onDuplicate: () => void
+  onTypeChange: (newType: TaskType) => void
+  dragHandleProps?: Record<string, unknown>
 }
 
 // Extract entity IDs from task for prefetching
@@ -131,9 +139,9 @@ export function TaskEditor({
   onToggleExpanded,
   onUpdate,
   onRemove,
-  onMoveUp,
-  onMoveDown,
   onDuplicate,
+  onTypeChange,
+  dragHandleProps,
 }: TaskEditorProps) {
   const TaskForm = getTaskForm(task.type)
   const { getName, prefetch } = useEntityNames()
@@ -155,41 +163,50 @@ export function TaskEditor({
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggleExpanded}>
       <Card className="border">
-        <CollapsibleTrigger asChild>
-          <div className="flex items-center gap-2 p-3 cursor-pointer hover:bg-muted/50">
-            <span className="text-sm font-mono text-muted-foreground w-6">{index + 1}.</span>
-            <Badge variant="outline" className={getTaskColor(task.type)}>
-              {task.type}
-            </Badge>
-            <span className="text-sm text-muted-foreground flex-1 truncate">
-              {summary}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {isExpanded ? '[-]' : '[+]'}
-            </span>
+        <div className="flex items-center gap-2 p-3">
+          {/* Drag Handle */}
+          <div
+            {...dragHandleProps}
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+          >
+            <GripVertical className="h-4 w-4" />
           </div>
-        </CollapsibleTrigger>
+          <span className="text-sm font-mono text-muted-foreground w-6">{index + 1}.</span>
+          {/* Task Type Selector */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <Select
+              value={task.type}
+              onValueChange={(value) => onTypeChange(value as TaskType)}
+            >
+              <SelectTrigger className={`h-7 text-xs px-2 ${getTaskColor(task.type)}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_TYPES.map((t) => (
+                  <SelectItem key={t.type} value={t.type}>
+                    <span className="text-muted-foreground text-xs mr-2">[{t.category}]</span>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center gap-2 flex-1 cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
+              <span className="text-sm text-muted-foreground flex-1 truncate">
+                {summary}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {isExpanded ? '[-]' : '[+]'}
+              </span>
+            </div>
+          </CollapsibleTrigger>
+        </div>
 
         <CollapsibleContent>
           <CardContent className="pt-0 pb-4 border-t">
             {/* Task Actions */}
             <div className="flex gap-1 mb-4 pt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onMoveUp}
-                disabled={index === 0}
-              >
-                Move Up
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onMoveDown}
-                disabled={index === totalTasks - 1}
-              >
-                Move Down
-              </Button>
               <Button variant="outline" size="sm" onClick={onDuplicate}>
                 Duplicate
               </Button>
