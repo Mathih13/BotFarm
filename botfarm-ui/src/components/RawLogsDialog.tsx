@@ -86,7 +86,7 @@ export function RawLogsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+      <DialogContent className="min-w-4xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             Raw Logs: {characterName}
