@@ -408,6 +408,12 @@ namespace BotFarm.AI.Tasks
                             GetString(p, "message", null)
                         );
 
+                    case "movetotaskstart":
+                        return new MoveToTaskStartTask(
+                            GetNullableInt(p, "taskIndex"),
+                            GetNullableInt(p, "relativeOffset")
+                        );
+
                     default:
                         throw new NotSupportedException($"Unknown task type: {taskData.Type}");
                 }
@@ -463,6 +469,13 @@ namespace BotFarm.AI.Tasks
         private static bool GetBool(Dictionary<string, JsonElement> p, string key, bool defaultValue = false)
         {
             return p != null && p.ContainsKey(key) ? p[key].GetBoolean() : defaultValue;
+        }
+
+        private static int? GetNullableInt(Dictionary<string, JsonElement> p, string key)
+        {
+            if (p == null || !p.ContainsKey(key))
+                return null;
+            return p[key].GetInt32();
         }
 
         private static LogLevel ParseLogLevel(string level)
