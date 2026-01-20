@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { testsApi } from '~/lib/api'
 import { useTestRunEvents, subscribeToRun, unsubscribeFromRun } from '~/lib/signalr'
 import { formatDuration, formatDateTime, getStatusColor, getStatusIcon, isRunning, getClassColor } from '~/lib/utils'
 import type { ApiTestRun, ApiBotResult, ApiTaskResult, ApiTaskStartedEvent, ApiTaskCompletedEvent } from '~/lib/types'
+import { useEntityNames } from '~/hooks/useEntityNames'
 import { Button } from '~/components/ui/button'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -173,6 +174,34 @@ function TestDetail() {
     })
   }
 
+  // Collect all task names for entity name resolution
+  // We use botCurrentTasks.size as a dependency hint since Map comparison is by reference
+  const allTaskNames = useMemo(() => {
+    const names: string[] = [];
+
+    // Add task names from current tasks
+    botCurrentTasks.forEach((taskInfo) => {
+      names.push(taskInfo.taskName);
+    });
+
+    // Add task names from completed bot results
+    if (test?.botResults) {
+      for (const bot of test.botResults) {
+        if (bot.taskResults) {
+          for (const task of bot.taskResults) {
+            names.push(task.taskName);
+          }
+        }
+      }
+    }
+
+    return names;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [test?.botResults, botCurrentTasks, botCurrentTasks.size]);
+
+  // Use the entity names hook to resolve IDs to names
+  const { getDisplayName } = useEntityNames(allTaskNames);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -323,6 +352,7 @@ function TestDetail() {
                   expanded={expandedBots.has(bot.botName)}
                   onToggle={() => toggleBot(bot.botName)}
                   currentTask={botCurrentTasks.get(bot.botName)}
+                  getDisplayName={getDisplayName}
                 />
               ))
             )}
@@ -344,11 +374,13 @@ function BotResultRow({
   expanded,
   onToggle,
   currentTask,
+  getDisplayName,
 }: {
   bot: ApiBotResult
   expanded: boolean
   onToggle: () => void
   currentTask?: CurrentTaskInfo
+  getDisplayName: (taskName: string) => string
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(bot.durationSeconds)
   const [rawLogsOpen, setRawLogsOpen] = useState(false)
@@ -407,8 +439,8 @@ function BotResultRow({
               <div className="text-xs text-muted-foreground">{bot.botName}</div>
               {/* Show current task when bot is running */}
               {!bot.isComplete && currentTask && (
-                <div className="text-xs text-blue-400 mt-0.5">
-                  Current: {currentTask.taskName} ({currentTask.taskIndex + 1}/{currentTask.totalTasks})
+                <div className="text-xs text-blue-400 mt-0.5" title={currentTask.taskName}>
+                 {getDisplayName(currentTask.taskName)} ({currentTask.taskIndex + 1}/{currentTask.totalTasks})
                 </div>
               )}
             </div>
@@ -447,7 +479,7 @@ function BotResultRow({
           {bot.taskResults && bot.taskResults.length > 0 ? (
             <div className="ml-6 border-l-2 border-border pl-4">
               {bot.taskResults.map((task, idx) => (
-                <TaskResultRow key={idx} task={task} />
+                <TaskResultRow key={idx} task={task} getDisplayName={getDisplayName} />
               ))}
             </div>
           ) : (
@@ -509,7 +541,13 @@ function BotResultRow({
   )
 }
 
-function TaskResultRow({ task }: { task: ApiTaskResult }) {
+function TaskResultRow({
+  task,
+  getDisplayName,
+}: {
+  task: ApiTaskResult
+  getDisplayName: (taskName: string) => string
+}) {
   return (
     <div className="py-2 text-sm">
       <div className="flex items-center justify-between">
@@ -520,7 +558,7 @@ function TaskResultRow({ task }: { task: ApiTaskResult }) {
           >
             {task.result === 'Success' ? '✓' : task.result === 'Failed' ? '✗' : '○'}
           </Badge>
-          <span>{task.taskName}</span>
+          <span title={task.taskName}>{getDisplayName(task.taskName)}</span>
         </div>
         <span className="text-muted-foreground">{formatDuration(task.durationSeconds)}</span>
       </div>
