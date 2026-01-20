@@ -118,6 +118,7 @@ namespace BotFarm.Testing
 
             var testBots = new List<BotGame>();
             var botResults = new Dictionary<BotGame, BotTestResult>();
+            var createdAccounts = new List<string>(); // Track accounts for cleanup
 
             try
             {
@@ -128,13 +129,15 @@ namespace BotFarm.Testing
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    string username = $"{harness.AccountPrefix}{i + 1}";
+                    // Include test run ID in username to ensure parallel test runs don't collide
+                    string username = $"t{testRun.Id}_{i + 1}";
                     string botClass = harness.Classes != null && harness.Classes.Count > 0
                         ? harness.Classes[i % harness.Classes.Count]
                         : "Warrior";
 
-                    // Create bot via factory (handles RA account creation with GM level 2)
+                    // Create bot via factory (handles RA account creation with GM level 3)
                     var bot = factory.CreateTestBot(username, harness, i, startBot: false);
+                    createdAccounts.Add(username); // Track for cleanup
 
                     var result = testRun.AddBot(username, null, botClass); // Character name filled in after login
                     botResults[bot] = result;
@@ -205,6 +208,8 @@ namespace BotFarm.Testing
                     {
                         executor.TaskStarted += (sender, args) =>
                         {
+                            // Set total tasks on first task start (or if it changes)
+                            result.SetTotalTasks(args.TotalTasks);
                             result.AddLog($"Task '{args.Task.Name}' started ({args.TaskIndex + 1}/{args.TotalTasks})");
                             TaskStarted?.Invoke(this, (testRun, result.BotName, args));
                         };
@@ -323,6 +328,16 @@ namespace BotFarm.Testing
                     }
                     catch { }
                 }));
+
+                // Delete test accounts to avoid accumulating stray accounts
+                foreach (var username in createdAccounts)
+                {
+                    try
+                    {
+                        factory.DeleteTestAccount(username);
+                    }
+                    catch { }
+                }
 
                 // Move from active to completed
                 lock (runLock)
