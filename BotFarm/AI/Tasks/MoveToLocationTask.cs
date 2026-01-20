@@ -11,21 +11,26 @@ namespace BotFarm.AI.Tasks
     {
         private readonly Position destination;
         private readonly float arrivalThreshold;
+        private readonly string description;
         private bool moveStarted = false;
         private int movementActionId = -1;
-        
-        public override string Name => $"MoveToLocation({destination.X:F1}, {destination.Y:F1}, {destination.Z:F1})";
-        
-        public MoveToLocationTask(float x, float y, float z, int mapId, float arrivalThreshold = 3.0f)
+
+        public override string Name => !string.IsNullOrEmpty(description)
+            ? $"MoveToLocation({description})"
+            : $"MoveToLocation({destination.X:F1}, {destination.Y:F1}, {destination.Z:F1})";
+
+        public MoveToLocationTask(float x, float y, float z, int mapId, float arrivalThreshold = 3.0f, string description = null)
         {
             destination = new Position(x, y, z, 0.0f, mapId);
             this.arrivalThreshold = arrivalThreshold;
+            this.description = description;
         }
-        
-        public MoveToLocationTask(Position destination, float arrivalThreshold = 3.0f)
+
+        public MoveToLocationTask(Position destination, float arrivalThreshold = 3.0f, string description = null)
         {
             this.destination = destination;
             this.arrivalThreshold = arrivalThreshold;
+            this.description = description;
         }
         
         public override bool Start(AutomatedGame game)

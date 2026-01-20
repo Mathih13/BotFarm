@@ -5,6 +5,19 @@ import { Label } from '~/components/ui/label'
 export function MoveToLocationForm({ parameters, onChange }: TaskFormProps) {
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="description">Description (optional)</Label>
+        <Input
+          id="description"
+          value={(parameters.description as string) || ''}
+          onChange={(e) => onChange({ description: e.target.value || undefined })}
+          placeholder="e.g. Northshire Abbey, Quest Giver Area"
+        />
+        <p className="text-xs text-muted-foreground">
+          Human-readable name shown instead of coordinates
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="space-y-2">
           <Label htmlFor="mapId">Map ID</Label>
