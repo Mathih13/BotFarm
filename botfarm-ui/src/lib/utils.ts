@@ -78,7 +78,7 @@ export function getClassColor(className: string): string {
     Paladin: '#F58CBA',
     Hunter: '#ABD473',
     Rogue: '#FFF569',
-    Priest: '#FFFFFF',
+    Priest: '#D0D0D0',
     DeathKnight: '#C41F3B',
     Shaman: '#0070DE',
     Mage: '#69CCF0',

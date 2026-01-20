@@ -1,4 +1,5 @@
 using Client.UI;
+using Client.World.Entities;
 using System;
 using System.Collections.Generic;
 
@@ -13,6 +14,7 @@ namespace Client.AI.Tasks
         private bool isActive = false;
 
         // Event system for test framework
+        public event EventHandler<TaskStartedEventArgs> TaskStarted;
         public event EventHandler<TaskCompletedEventArgs> TaskCompleted;
         public event EventHandler<RouteCompletedEventArgs> RouteCompleted;
 
@@ -24,12 +26,31 @@ namespace Client.AI.Tasks
         private int tasksFailed = 0;
         private int tasksSkipped = 0;
 
+        // Task start position tracking for recovery
+        private Dictionary<int, Position> taskStartPositions = new Dictionary<int, Position>();
+
         public TaskRoute Route => route;
         public int CurrentTaskIndex => currentTaskIndex;
         public ITask CurrentTask => currentTask;
         public bool IsComplete => currentTaskIndex >= route.Tasks.Count && !route.Loop;
         public IReadOnlyList<TaskCompletedEventArgs> TaskResults => taskResults;
-        
+
+        /// <summary>
+        /// Get the start position of a task by absolute index
+        /// </summary>
+        public Position GetTaskStartPosition(int taskIndex)
+        {
+            return taskStartPositions.TryGetValue(taskIndex, out var pos) ? pos : null;
+        }
+
+        /// <summary>
+        /// Get the start position of a task relative to the current task
+        /// </summary>
+        public Position GetTaskStartPositionRelative(int offset)
+        {
+            return GetTaskStartPosition(currentTaskIndex + offset);
+        }
+
         public TaskExecutorAI(TaskRoute route)
         {
             this.route = route ?? throw new ArgumentNullException(nameof(route));
@@ -44,6 +65,7 @@ namespace Client.AI.Tasks
             tasksCompleted = 0;
             tasksFailed = 0;
             tasksSkipped = 0;
+            taskStartPositions.Clear();
 
             if (route.Tasks.Count == 0)
             {
@@ -145,7 +167,14 @@ namespace Client.AI.Tasks
 
             currentTask = route.Tasks[currentTaskIndex];
             taskStartTime = DateTime.UtcNow;
+
+            // Capture the player's position when the task starts (for recovery)
+            taskStartPositions[currentTaskIndex] = game.Player.GetPosition();
+
             game.Log($"TaskExecutorAI: Starting task {currentTaskIndex + 1}/{route.Tasks.Count}: '{currentTask.Name}'", LogLevel.Info);
+
+            // Fire TaskStarted event
+            FireTaskStarted(currentTask);
 
             if (!currentTask.Start(game))
             {
@@ -189,6 +218,16 @@ namespace Client.AI.Tasks
         public bool AllowPause()
         {
             return true;
+        }
+
+        private void FireTaskStarted(ITask task)
+        {
+            var eventArgs = new TaskStartedEventArgs(
+                task,
+                currentTaskIndex,
+                route.Tasks.Count
+            );
+            TaskStarted?.Invoke(this, eventArgs);
         }
 
         private void FireTaskCompleted(ITask task, TaskResult result, string errorMessage)

@@ -137,24 +137,20 @@ function Dashboard() {
         <StatusCard
           title="Active Bots"
           value={status?.activeBots ?? 0}
-          icon="🤖"
         />
         <StatusCard
           title="Running Tests"
           value={status?.activeTestRuns ?? 0}
-          icon="▶"
           highlight={status?.activeTestRuns ? status.activeTestRuns > 0 : false}
         />
         <StatusCard
           title="Running Suites"
           value={status?.activeSuiteRuns ?? 0}
-          icon="📦"
           highlight={status?.activeSuiteRuns ? status.activeSuiteRuns > 0 : false}
         />
         <StatusCard
           title="Completed Tests"
           value={status?.completedTestRuns ?? 0}
-          icon="✓"
         />
       </div>
 
@@ -280,12 +276,10 @@ function Dashboard() {
 function StatusCard({
   title,
   value,
-  icon,
   highlight = false,
 }: {
   title: string
   value: number
-  icon: string
   highlight?: boolean
 }) {
   return (
@@ -296,7 +290,6 @@ function StatusCard({
             <p className="text-sm text-muted-foreground">{title}</p>
             <p className="text-2xl font-bold">{value}</p>
           </div>
-          <div className="text-2xl">{icon}</div>
         </div>
       </CardContent>
     </Card>

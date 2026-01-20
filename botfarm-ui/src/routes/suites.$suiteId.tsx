@@ -127,7 +127,6 @@ function SuiteDetail() {
             &larr; Back to Suites
           </Link>
           <h1 className="text-2xl font-bold">{suite.suiteName}</h1>
-          <p className="text-muted-foreground">{suite.suitePath}</p>
         </div>
         <div className="flex items-center gap-4">
           <Badge
@@ -262,7 +261,6 @@ function TestRunRow({ test, index }: { test: ApiTestRun; index: number }) {
       <TableCell className="text-muted-foreground">{index}</TableCell>
       <TableCell>
         <div className="font-medium">{test.routeName}</div>
-        <div className="text-xs text-muted-foreground">{test.routePath}</div>
       </TableCell>
       <TableCell>
         <Badge

@@ -58,6 +58,16 @@ export function RawLogsDialog({
   const [error, setError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState(0)
   const [filteredCount, setFilteredCount] = useState(0)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyLogs = async () => {
+    const text = logs.map(log =>
+      `${formatTimestamp(log.timestamp)} [${log.level.toUpperCase()}] ${log.message}`
+    ).join('\n')
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
@@ -86,7 +96,7 @@ export function RawLogsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+      <DialogContent className="min-w-4xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
             Raw Logs: {characterName}
@@ -100,14 +110,24 @@ export function RawLogsDialog({
           <div className="text-sm text-muted-foreground">
             Showing {logs.length} of {filteredCount} matching logs ({totalCount} total)
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchLogs}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyLogs}
+              disabled={loading || logs.length === 0}
+            >
+              {copied ? 'Copied!' : 'Copy All'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchLogs}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          </div>
         </div>
 
         <div className="flex-1 min-h-0 bg-zinc-900 rounded p-3 overflow-y-auto font-mono text-xs">

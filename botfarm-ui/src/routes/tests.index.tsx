@@ -244,7 +244,6 @@ function TestsIndex() {
                     >
                       {test.routeName}
                     </Link>
-                    <div className="text-xs text-muted-foreground">{test.routePath}</div>
                   </TableCell>
                   <TableCell>
                     <Badge

@@ -1,6 +1,6 @@
 import * as signalR from '@microsoft/signalr';
 import { useEffect, useRef, useState } from 'react';
-import type { ApiTestRun, ApiTestSuiteRun, ApiBotResult } from './types';
+import type { ApiTestRun, ApiTestSuiteRun, ApiBotResult, ApiTaskStartedEvent, ApiTaskCompletedEvent } from './types';
 
 // Get the hub URL - use environment variable in dev, relative path in production
 function getHubUrl(): string {
@@ -57,6 +57,8 @@ export type TestRunStartedHandler = (run: ApiTestRun) => void;
 export type TestRunCompletedHandler = (run: ApiTestRun) => void;
 export type TestRunStatusHandler = (run: ApiTestRun) => void;
 export type BotCompletedHandler = (runId: string, bot: ApiBotResult) => void;
+export type TaskStartedHandler = (event: ApiTaskStartedEvent) => void;
+export type TaskCompletedHandler = (event: ApiTaskCompletedEvent) => void;
 export type SuiteStartedHandler = (suite: ApiTestSuiteRun) => void;
 export type SuiteCompletedHandler = (suite: ApiTestSuiteRun) => void;
 export type SuiteTestCompletedHandler = (suiteId: string, test: ApiTestRun) => void;
@@ -114,6 +116,8 @@ export function useTestRunEvents(handlers: {
   onTestRunCompleted?: TestRunCompletedHandler;
   onTestRunStatus?: TestRunStatusHandler;
   onBotCompleted?: BotCompletedHandler;
+  onTaskStarted?: TaskStartedHandler;
+  onTaskCompleted?: TaskCompletedHandler;
 }) {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -138,16 +142,28 @@ export function useTestRunEvents(handlers: {
       handlersRef.current.onBotCompleted?.(runId, bot);
     };
 
+    const onTaskStarted = (event: ApiTaskStartedEvent) => {
+      handlersRef.current.onTaskStarted?.(event);
+    };
+
+    const onTaskCompleted = (event: ApiTaskCompletedEvent) => {
+      handlersRef.current.onTaskCompleted?.(event);
+    };
+
     conn.on('testRunStarted', onTestRunStarted);
     conn.on('testRunCompleted', onTestRunCompleted);
     conn.on('testRunStatus', onTestRunStatus);
     conn.on('botCompleted', onBotCompleted);
+    conn.on('taskStarted', onTaskStarted);
+    conn.on('taskCompleted', onTaskCompleted);
 
     return () => {
       conn.off('testRunStarted', onTestRunStarted);
       conn.off('testRunCompleted', onTestRunCompleted);
       conn.off('testRunStatus', onTestRunStatus);
       conn.off('botCompleted', onBotCompleted);
+      conn.off('taskStarted', onTaskStarted);
+      conn.off('taskCompleted', onTaskCompleted);
     };
   }, []);
 }

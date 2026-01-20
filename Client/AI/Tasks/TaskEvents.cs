@@ -4,6 +4,23 @@ using System.Collections.Generic;
 namespace Client.AI.Tasks
 {
     /// <summary>
+    /// Event args for when a task starts within a route
+    /// </summary>
+    public class TaskStartedEventArgs : EventArgs
+    {
+        public ITask Task { get; init; }
+        public int TaskIndex { get; init; }
+        public int TotalTasks { get; init; }
+
+        public TaskStartedEventArgs(ITask task, int taskIndex, int totalTasks)
+        {
+            Task = task;
+            TaskIndex = taskIndex;
+            TotalTasks = totalTasks;
+        }
+    }
+
+    /// <summary>
     /// Event args for when a single task completes within a route
     /// </summary>
     public class TaskCompletedEventArgs : EventArgs

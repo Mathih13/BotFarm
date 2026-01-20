@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { testsApi } from '~/lib/api'
 import { useTestRunEvents, subscribeToRun, unsubscribeFromRun } from '~/lib/signalr'
 import { formatDuration, formatDateTime, getStatusColor, getStatusIcon, isRunning, getClassColor } from '~/lib/utils'
-import type { ApiTestRun, ApiBotResult, ApiTaskResult } from '~/lib/types'
+import type { ApiTestRun, ApiBotResult, ApiTaskResult, ApiTaskStartedEvent, ApiTaskCompletedEvent } from '~/lib/types'
 import { Button } from '~/components/ui/button'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -14,12 +14,20 @@ export const Route = createFileRoute('/tests/$testId')({
   component: TestDetail,
 })
 
+// Type for tracking current task per bot
+interface CurrentTaskInfo {
+  taskName: string;
+  taskIndex: number;
+  totalTasks: number;
+}
+
 function TestDetail() {
   const { testId } = Route.useParams()
   const [test, setTest] = useState<ApiTestRun | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedBots, setExpandedBots] = useState<Set<string>>(new Set())
+  const [botCurrentTasks, setBotCurrentTasks] = useState<Map<string, CurrentTaskInfo>>(new Map())
 
   // Load test data
   useEffect(() => {
@@ -57,6 +65,8 @@ function TestDetail() {
       if (run.id === testId) {
         // Merge completed update with existing state to preserve botResults
         setTest((prev) => prev ? { ...prev, ...run, botResults: run.botResults || prev.botResults } : run)
+        // Clear current tasks when test completes
+        setBotCurrentTasks(new Map())
       }
     },
     onBotCompleted: (runId, bot) => {
@@ -73,6 +83,70 @@ function TestDetail() {
             botsCompleted: updated.filter((b) => b.isComplete).length,
             botsPassed: updated.filter((b) => b.success).length,
             botsFailed: updated.filter((b) => b.isComplete && !b.success).length,
+          }
+        })
+        // Clear current task for this bot when it completes
+        setBotCurrentTasks((prev) => {
+          const next = new Map(prev)
+          next.delete(bot.botName)
+          return next
+        })
+      }
+    },
+    onTaskStarted: (event) => {
+      if (event.runId === testId) {
+        setBotCurrentTasks((prev) => {
+          const next = new Map(prev)
+          next.set(event.botName, {
+            taskName: event.taskName,
+            taskIndex: event.taskIndex,
+            totalTasks: event.totalTasks,
+          })
+          return next
+        })
+      }
+    },
+    onTaskCompleted: (event) => {
+      if (event.runId === testId) {
+        // Update bot's task results in real-time
+        setTest((prev) => {
+          if (!prev) return prev
+          const existingBots = prev.botResults || []
+          const botIndex = existingBots.findIndex((b) => b.botName === event.botName)
+
+          if (botIndex === -1) return prev
+
+          const bot = existingBots[botIndex]
+          const newTaskResult: ApiTaskResult = {
+            taskName: event.taskName,
+            result: event.result,
+            durationSeconds: event.durationSeconds,
+            errorMessage: event.errorMessage,
+          }
+
+          // Add the task result if not already present
+          const existingTaskResults = bot.taskResults || []
+          const taskExists = existingTaskResults.some(
+            (t) => t.taskName === event.taskName && Math.abs(t.durationSeconds - event.durationSeconds) < 0.01
+          )
+
+          if (taskExists) return prev
+
+          const updatedBot: ApiBotResult = {
+            ...bot,
+            taskResults: [...existingTaskResults, newTaskResult],
+            tasksCompleted: bot.tasksCompleted + (event.result === 'Success' ? 1 : 0),
+            tasksFailed: bot.tasksFailed + (event.result === 'Failed' ? 1 : 0),
+            tasksSkipped: bot.tasksSkipped + (event.result === 'Skipped' ? 1 : 0),
+            totalTasks: event.totalTasks,
+          }
+
+          const updatedBots = [...existingBots]
+          updatedBots[botIndex] = updatedBot
+
+          return {
+            ...prev,
+            botResults: updatedBots,
           }
         })
       }
@@ -134,7 +208,6 @@ function TestDetail() {
             &larr; Back to Tests
           </Link>
           <h1 className="text-2xl font-bold">{test.routeName}</h1>
-          <p className="text-muted-foreground">{test.routePath}</p>
         </div>
         <div className="flex items-center gap-4">
           <Badge
@@ -249,6 +322,7 @@ function TestDetail() {
                   bot={bot}
                   expanded={expandedBots.has(bot.botName)}
                   onToggle={() => toggleBot(bot.botName)}
+                  currentTask={botCurrentTasks.get(bot.botName)}
                 />
               ))
             )}
@@ -269,10 +343,12 @@ function BotResultRow({
   bot,
   expanded,
   onToggle,
+  currentTask,
 }: {
   bot: ApiBotResult
   expanded: boolean
   onToggle: () => void
+  currentTask?: CurrentTaskInfo
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(bot.durationSeconds)
   const [rawLogsOpen, setRawLogsOpen] = useState(false)
@@ -329,6 +405,12 @@ function BotResultRow({
                 </span>
               </div>
               <div className="text-xs text-muted-foreground">{bot.botName}</div>
+              {/* Show current task when bot is running */}
+              {!bot.isComplete && currentTask && (
+                <div className="text-xs text-blue-400 mt-0.5">
+                  Current: {currentTask.taskName} ({currentTask.taskIndex + 1}/{currentTask.totalTasks})
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4">

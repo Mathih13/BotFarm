@@ -25,6 +25,8 @@ namespace BotFarm.Testing
         public event EventHandler<TestRun> TestRunCompleted;
         public event EventHandler<TestRun> TestRunStatusChanged;
         public event EventHandler<(TestRun run, BotTestResult bot)> BotCompleted;
+        public event EventHandler<(TestRun run, string botName, TaskStartedEventArgs task)> TaskStarted;
+        public event EventHandler<(TestRun run, string botName, TaskCompletedEventArgs task)> TaskCompleted;
 
         public TestRunCoordinator(BotFactory factory, SnapshotManager snapshotManager = null)
         {
@@ -201,10 +203,17 @@ namespace BotFarm.Testing
                     var executor = bot.LoadRoute(fullRoutePath);
                     if (executor != null)
                     {
+                        executor.TaskStarted += (sender, args) =>
+                        {
+                            result.AddLog($"Task '{args.Task.Name}' started ({args.TaskIndex + 1}/{args.TotalTasks})");
+                            TaskStarted?.Invoke(this, (testRun, result.BotName, args));
+                        };
+
                         executor.TaskCompleted += (sender, args) =>
                         {
                             result.AddTaskResult(args.Task.Name, args.Result, args.Duration, args.ErrorMessage);
                             result.AddLog($"Task '{args.Task.Name}' {args.Result}");
+                            TaskCompleted?.Invoke(this, (testRun, result.BotName, args));
                         };
 
                         executor.RouteCompleted += (sender, args) =>
