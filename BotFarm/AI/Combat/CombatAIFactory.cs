@@ -16,10 +16,10 @@ namespace BotFarm.AI.Combat
                 // TODO: Add more class implementations
                 Class.Paladin => new PaladinCombatAI(),
                 Class.Hunter => new GenericCombatAI(),   // TODO: Implement
-                Class.Rogue => new GenericCombatAI(),    // TODO: Implement
+                Class.Rogue => new RogueCombatAI(),
                 Class.Shaman => new GenericCombatAI(),   // TODO: Implement
-                Class.Mage => new GenericCombatAI(),     // TODO: Implement
-                Class.Warlock => new GenericCombatAI(),  // TODO: Implement
+                Class.Mage => new MageCombatAI(),
+                Class.Warlock => new WarlockCombatAI(),
                 Class.Druid => new GenericCombatAI(),    // TODO: Implement
                 Class.DeathKnight => new GenericCombatAI(), // TODO: Implement
                 _ => new GenericCombatAI()
