@@ -63,18 +63,27 @@ function getTaskSummaryWithNames(
     case 'LogMessage':
       return params.message ? `"${String(params.message).slice(0, 30)}..."` : '(empty)'
     case 'MoveToLocation':
-      return `(${params.x}, ${params.y}, ${params.z})`
+      const desc = params.description as string
+      return desc || `(${params.x}, ${params.y}, ${params.z})`
     case 'MoveToNPC':
     case 'TalkToNPC':
       return params.npcEntry ? npcName(params.npcEntry as number) : '(no NPC)'
     case 'AcceptQuest':
+      const aqid = params.questId as number
+      const anid = params.npcEntry as number
+      if (aqid && anid) {
+        return `${questName(aqid)} from ${npcName(anid)}`
+      } else if (aqid) {
+        return questName(aqid)
+      }
+      return '(not configured)'
     case 'TurnInQuest':
-      const qid = params.questId as number
-      const nid = params.npcEntry as number
-      if (qid && nid) {
-        return `${questName(qid)} from ${npcName(nid)}`
-      } else if (qid) {
-        return questName(qid)
+      const tqid = params.questId as number
+      const tnid = params.npcEntry as number
+      if (tqid && tnid) {
+        return `${questName(tqid)} to ${npcName(tnid)}`
+      } else if (tqid) {
+        return questName(tqid)
       }
       return '(not configured)'
     case 'KillMobs':

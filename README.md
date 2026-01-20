@@ -81,7 +81,6 @@ BotFarm includes a real-time web dashboard for monitoring and controlling bots.
 - Live bot status and statistics
 - Route assignment and management
 - Test run monitoring
-- Interactive map visualization
 
 The UI starts automatically with BotFarm. For development mode (hot reloading):
 

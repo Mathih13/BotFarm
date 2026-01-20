@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { RouteFormData, HarnessFormData, PositionData, ItemRequirement } from '~/lib/types'
 import { PLAYER_CLASSES, PLAYER_RACES } from '~/lib/types'
+import { getClassColor } from '~/lib/utils'
 import { Input } from '~/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Label } from '~/components/ui/label'
@@ -144,16 +145,25 @@ export function HarnessSection({ harness, onChange }: HarnessSectionProps) {
           <div className="space-y-2">
             <Label>Classes (select one or more)</Label>
             <div className="flex flex-wrap gap-2">
-              {PLAYER_CLASSES.map((cls) => (
-                <Badge
-                  key={cls}
-                  variant={harness.classes.includes(cls) ? 'default' : 'outline'}
-                  className="cursor-pointer"
-                  onClick={() => toggleClass(cls)}
-                >
-                  {cls}
-                </Badge>
-              ))}
+              {PLAYER_CLASSES.map((cls) => {
+                const isSelected = harness.classes.includes(cls)
+                const classColor = getClassColor(cls)
+                return (
+                  <Badge
+                    key={cls}
+                    variant="outline"
+                    className="cursor-pointer"
+                    style={{
+                      backgroundColor: isSelected ? classColor : 'transparent',
+                      borderColor: classColor,
+                      color: isSelected ? '#fff' : classColor,
+                    }}
+                    onClick={() => toggleClass(cls)}
+                  >
+                    {cls}
+                  </Badge>
+                )
+              })}
             </div>
             {harness.classes.length === 0 && (
               <p className="text-xs text-muted-foreground">

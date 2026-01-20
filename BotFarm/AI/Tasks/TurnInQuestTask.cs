@@ -12,11 +12,12 @@ namespace BotFarm.AI.Tasks
 {
     /// <summary>
     /// Task that turns in a completed quest to an NPC.
-    /// Prerequisites: Must be within interaction range of the NPC (use MoveToNPCTask first),
-    /// and the quest must be completed.
+    /// Automatically handles movement and talking to the NPC if needed.
     /// </summary>
     public class TurnInQuestTask : BaseTask
     {
+        private enum TurnInQuestState { FindingNPC, MovingToNPC, TalkingToNPC, RequestingCompletion, TurningIn }
+
         private readonly uint npcEntry;
         private readonly uint questId;
         private readonly uint rewardChoice;
@@ -25,17 +26,19 @@ namespace BotFarm.AI.Tasks
         private uint resolvedQuestId;
         private uint resolvedNpcEntry;
         private WorldObject targetNpc = null;
-        private bool interactionSent = false;
+        private TurnInQuestState state = TurnInQuestState.FindingNPC;
+        private bool moveStarted = false;
+        private bool talkSent = false;
+        private DateTime talkTime;
         private bool completionRequested = false;
-        private bool turnInSent = false;
-        private DateTime actionTime;
+        private DateTime completionTime;
         private readonly float interactionRange = 5.0f;
         private readonly double timeoutSeconds = 5.0;
 
         public override string Name => classQuests != null || classNPCs != null
             ? $"TurnInClassQuest({resolvedQuestId})"
             : (questId != 0 ? $"TurnInQuest({questId})" : $"TurnInQuestAtNPC({npcEntry})");
-        
+
         /// <summary>
         /// Turn in a specific quest to a specific NPC
         /// </summary>
@@ -83,7 +86,7 @@ namespace BotFarm.AI.Tasks
             this.classNPCs = null;
             SetDelayPadding(RandomDelay(0.3f, 0.6f), RandomDelay(0.5f, 1.0f));
         }
-        
+
         public override bool Start(AutomatedGame game)
         {
             if (!base.Start(game))
@@ -139,36 +142,26 @@ namespace BotFarm.AI.Tasks
                 resolvedNpcEntry = npcEntry;
             }
 
-            // If we have an NPC entry, find it
-            if (resolvedNpcEntry != 0)
-            {
-                targetNpc = MoveToNPCTask.FindNPCByEntry(game, resolvedNpcEntry);
-                if (targetNpc == null)
-                {
-                    game.Log($"TurnInQuestTask: NPC with entry {resolvedNpcEntry} not found nearby", LogLevel.Warning);
-                    return false;
-                }
-
-                float distance = (targetNpc - game.Player).Length;
-                if (distance > interactionRange)
-                {
-                    game.Log($"TurnInQuestTask: Too far from NPC (distance: {distance:F2}m), need to be within {interactionRange}m", LogLevel.Warning);
-                    return false;
-                }
-            }
-
+            state = TurnInQuestState.FindingNPC;
             return true;
         }
-        
+
         protected override TaskResult UpdateTask(AutomatedGame game)
         {
+            var botGame = game as BotGame;
+            if (botGame == null)
+            {
+                ErrorMessage = "Game is not a BotGame instance";
+                return TaskResult.Failed;
+            }
+
             if (!game.Player.IsAlive)
             {
                 ErrorMessage = "Player is dead";
                 game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
                 return TaskResult.Failed;
             }
-            
+
             // If turning in the pending quest (no specific quest ID)
             if (resolvedQuestId == 0)
             {
@@ -185,75 +178,175 @@ namespace BotFarm.AI.Tasks
                     return TaskResult.Failed;
                 }
             }
-            
-            // Turning in a specific quest to a specific NPC
+
+            switch (state)
+            {
+                case TurnInQuestState.FindingNPC:
+                    return HandleFindingNPC(game);
+
+                case TurnInQuestState.MovingToNPC:
+                    return HandleMovingToNPC(game, botGame);
+
+                case TurnInQuestState.TalkingToNPC:
+                    return HandleTalkingToNPC(game);
+
+                case TurnInQuestState.RequestingCompletion:
+                    return HandleRequestingCompletion(game);
+
+                case TurnInQuestState.TurningIn:
+                    return HandleTurningIn(game);
+
+                default:
+                    return TaskResult.Failed;
+            }
+        }
+
+        private TaskResult HandleFindingNPC(AutomatedGame game)
+        {
+            // Find the NPC
+            targetNpc = MoveToNPCTask.FindNPCByEntry(game, resolvedNpcEntry);
+            if (targetNpc == null)
+            {
+                ErrorMessage = $"NPC with entry {resolvedNpcEntry} not found nearby";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
+                return TaskResult.Failed;
+            }
+
+            float distance = (targetNpc - game.Player).Length;
+            game.Log($"TurnInQuestTask: Found NPC entry {resolvedNpcEntry} at distance {distance:F2}m", LogLevel.Debug);
+
+            if (distance <= interactionRange)
+            {
+                // Already in range, go straight to talking
+                state = TurnInQuestState.TalkingToNPC;
+            }
+            else
+            {
+                // Need to move first
+                state = TurnInQuestState.MovingToNPC;
+            }
+
+            return TaskResult.Running;
+        }
+
+        private TaskResult HandleMovingToNPC(AutomatedGame game, BotGame botGame)
+        {
             if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
             {
                 ErrorMessage = "NPC is no longer visible";
                 game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Error);
                 return TaskResult.Failed;
             }
-            
-            // First, send gossip hello to initiate conversation
-            if (!interactionSent)
+
+            float distance = (targetNpc - game.Player).Length;
+
+            if (distance <= interactionRange)
+            {
+                game.Log($"TurnInQuestTask: Arrived at NPC (distance: {distance:F2}m)", LogLevel.Debug);
+                state = TurnInQuestState.TalkingToNPC;
+                return TaskResult.Running;
+            }
+
+            if (!moveStarted)
+            {
+                game.Log($"TurnInQuestTask: Moving to NPC entry {resolvedNpcEntry} (distance: {distance:F2}m)", LogLevel.Debug);
+                game.CancelActionsByFlag(ActionFlag.Movement);
+                botGame.MoveTo(targetNpc.GetPosition());
+                moveStarted = true;
+            }
+
+            return TaskResult.Running;
+        }
+
+        private TaskResult HandleTalkingToNPC(AutomatedGame game)
+        {
+            if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
+            {
+                ErrorMessage = "NPC is no longer visible";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Error);
+                return TaskResult.Failed;
+            }
+
+            if (!talkSent)
             {
                 game.Log($"TurnInQuestTask: Talking to NPC entry {resolvedNpcEntry}", LogLevel.Debug);
-                
+
                 OutPacket gossipHello = new OutPacket(WorldCommand.CMSG_GOSSIP_HELLO);
                 gossipHello.Write(targetNpc.GUID);
                 game.SendPacket(gossipHello);
-                
-                interactionSent = true;
-                actionTime = DateTime.Now;
+
+                talkSent = true;
+                talkTime = DateTime.Now;
                 return TaskResult.Running;
             }
-            
-            // Wait a moment for gossip response, then request quest completion
-            if (!completionRequested && (DateTime.Now - actionTime).TotalSeconds > 0.5)
+
+            // Wait 0.5s for gossip response
+            if ((DateTime.Now - talkTime).TotalSeconds > 0.5)
+            {
+                state = TurnInQuestState.RequestingCompletion;
+            }
+
+            return TaskResult.Running;
+        }
+
+        private TaskResult HandleRequestingCompletion(AutomatedGame game)
+        {
+            if (targetNpc == null || !game.Objects.ContainsKey(targetNpc.GUID))
+            {
+                ErrorMessage = "NPC is no longer visible";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Error);
+                return TaskResult.Failed;
+            }
+
+            if (!completionRequested)
             {
                 game.Log($"TurnInQuestTask: Requesting quest {resolvedQuestId} completion", LogLevel.Debug);
                 game.CompleteQuest(targetNpc.GUID, resolvedQuestId);
                 completionRequested = true;
-                actionTime = DateTime.Now;
+                completionTime = DateTime.Now;
                 return TaskResult.Running;
             }
 
-            // Wait for turn-in to be available, or turn in if ready
-            if (completionRequested && !turnInSent)
+            // Check if we got the reward offer
+            if (game.HasPendingQuestTurnIn && game.PendingQuestTurnInId == resolvedQuestId)
             {
-                // Check if we got the reward offer
-                if (game.HasPendingQuestTurnIn && game.PendingQuestTurnInId == resolvedQuestId)
-                {
-                    game.TurnInQuest(rewardChoice);
-                    turnInSent = true;
-                    game.Log($"TurnInQuestTask: Quest {resolvedQuestId} turned in successfully", LogLevel.Debug);
-                    return TaskResult.Success;
-                }
-
-                // Also try direct turn-in after a delay (some quests skip the items request)
-                if ((DateTime.Now - actionTime).TotalSeconds > 1.0)
-                {
-                    game.TurnInQuest(targetNpc.GUID, resolvedQuestId, rewardChoice);
-                    turnInSent = true;
-                    game.Log($"TurnInQuestTask: Sent direct turn-in for quest {resolvedQuestId}", LogLevel.Debug);
-                    return TaskResult.Success;
-                }
-                
-                // Check timeout
-                if ((DateTime.Now - actionTime).TotalSeconds > timeoutSeconds)
-                {
-                    ErrorMessage = "Timeout waiting for quest turn-in";
-                    game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
-                    return TaskResult.Failed;
-                }
+                state = TurnInQuestState.TurningIn;
+                return TaskResult.Running;
             }
-            
+
+            // Also try direct turn-in after a delay (some quests skip the items request)
+            if ((DateTime.Now - completionTime).TotalSeconds > 1.0)
+            {
+                game.TurnInQuest(targetNpc.GUID, resolvedQuestId, rewardChoice);
+                game.Log($"TurnInQuestTask: Sent direct turn-in for quest {resolvedQuestId}", LogLevel.Debug);
+                return TaskResult.Success;
+            }
+
+            // Check timeout
+            if ((DateTime.Now - completionTime).TotalSeconds > timeoutSeconds)
+            {
+                ErrorMessage = "Timeout waiting for quest turn-in";
+                game.Log($"TurnInQuestTask: {ErrorMessage}", LogLevel.Warning);
+                return TaskResult.Failed;
+            }
+
             return TaskResult.Running;
         }
-        
+
+        private TaskResult HandleTurningIn(AutomatedGame game)
+        {
+            game.TurnInQuest(rewardChoice);
+            game.Log($"TurnInQuestTask: Quest {resolvedQuestId} turned in successfully", LogLevel.Debug);
+            return TaskResult.Success;
+        }
+
         public override void Cleanup(AutomatedGame game)
         {
             targetNpc = null;
+            state = TurnInQuestState.FindingNPC;
+            moveStarted = false;
+            talkSent = false;
+            completionRequested = false;
         }
     }
 }
