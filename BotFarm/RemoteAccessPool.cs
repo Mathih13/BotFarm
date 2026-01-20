@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace BotFarm
@@ -12,6 +13,8 @@ namespace BotFarm
     class RemoteAccessPool : IDisposable
     {
         private readonly ConcurrentBag<RemoteAccess> available = new ConcurrentBag<RemoteAccess>();
+        private readonly HashSet<RemoteAccess> allConnections = new HashSet<RemoteAccess>();
+        private readonly object allConnectionsLock = new object();
         private readonly SemaphoreSlim semaphore;
         private readonly string hostname;
         private readonly int port;
@@ -60,7 +63,6 @@ namespace BotFarm
             }
 
             // Create a new connection if we haven't hit the max
-            // Create a new connection if we haven't hit the max
             lock (available)
             {
                 int newSize = Interlocked.Increment(ref currentSize);
@@ -76,6 +78,13 @@ namespace BotFarm
                     {
                         Console.WriteLine($"RemoteAccessPool: Created connection #{newSize}");
                     }
+
+                    // Track all connections for proper disposal
+                    lock (allConnectionsLock)
+                    {
+                        allConnections.Add(newConnection);
+                    }
+
                     return newConnection;
                 }
 
@@ -83,10 +92,6 @@ namespace BotFarm
                 Interlocked.Decrement(ref currentSize);
                 throw new InvalidOperationException("Pool exhausted - this should not happen");
             }
-
-            // Shouldn't reach here with proper semaphore usage, but handle gracefully
-            Interlocked.Decrement(ref currentSize);
-            throw new InvalidOperationException("Pool exhausted - this should not happen");
         }
 
         /// <summary>
@@ -110,7 +115,7 @@ namespace BotFarm
         }
 
         /// <summary>
-        /// Dispose all connections in the pool
+        /// Dispose all connections in the pool, including checked-out ones
         /// </summary>
         public void Dispose()
         {
@@ -119,18 +124,25 @@ namespace BotFarm
 
             disposed = true;
 
-            // Dispose all connections in the bag
-            while (available.TryTake(out RemoteAccess connection))
+            // Dispose ALL connections (including checked-out ones)
+            lock (allConnectionsLock)
             {
-                try
+                foreach (var connection in allConnections)
                 {
-                    connection.Dispose();
+                    try
+                    {
+                        connection.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore disposal errors
+                    }
                 }
-                catch
-                {
-                    // Ignore disposal errors
-                }
+                allConnections.Clear();
             }
+
+            // Clear the available bag as well
+            while (available.TryTake(out _)) { }
 
             semaphore.Dispose();
         }
