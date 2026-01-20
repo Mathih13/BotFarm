@@ -249,7 +249,8 @@ namespace BotFarm.AI.Tasks
                             GetFloat(p, "y"),
                             GetFloat(p, "z"),
                             GetInt(p, "mapId"),
-                            GetFloat(p, "threshold", 3.0f)
+                            GetFloat(p, "threshold", 3.0f),
+                            GetString(p, "description", null)
                         );
                     
                     case "movetonpc":
