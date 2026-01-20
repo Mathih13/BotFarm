@@ -61,6 +61,29 @@ export interface ApiTaskResult {
   errorMessage: string | null;
 }
 
+// ============ Task Progress Event Types ============
+
+export interface ApiTaskStartedEvent {
+  runId: string;
+  botName: string;
+  taskName: string;
+  taskIndex: number;
+  totalTasks: number;
+  timestamp: string;
+}
+
+export interface ApiTaskCompletedEvent {
+  runId: string;
+  botName: string;
+  taskName: string;
+  taskIndex: number;
+  totalTasks: number;
+  result: 'Success' | 'Failed' | 'Skipped';
+  durationSeconds: number;
+  errorMessage: string | null;
+  timestamp: string;
+}
+
 export interface ApiTestSuiteRun {
   id: string;
   suiteName: string;

@@ -2,6 +2,7 @@ using System;
 using BotFarm.Testing;
 using BotFarm.Web.Hubs;
 using BotFarm.Web.Models;
+using Client.AI.Tasks;
 using Microsoft.AspNetCore.SignalR;
 
 namespace BotFarm.Web.Services
@@ -42,6 +43,8 @@ namespace BotFarm.Web.Services
             testCoordinator.TestRunCompleted += OnTestRunCompleted;
             testCoordinator.TestRunStatusChanged += OnTestRunStatusChanged;
             testCoordinator.BotCompleted += OnBotCompleted;
+            testCoordinator.TaskStarted += OnTaskStarted;
+            testCoordinator.TaskCompleted += OnTaskCompleted;
 
             // Suite events
             suiteCoordinator.SuiteStarted += OnSuiteStarted;
@@ -172,6 +175,55 @@ namespace BotFarm.Web.Services
             catch (Exception ex)
             {
                 factory.Log($"Error broadcasting suiteTestCompleted: {ex.Message}");
+            }
+        }
+
+        private async void OnTaskStarted(object sender, (TestRun run, string botName, TaskStartedEventArgs task) args)
+        {
+            try
+            {
+                var dto = new ApiTaskStartedEvent
+                {
+                    RunId = args.run.Id,
+                    BotName = args.botName,
+                    TaskName = args.task.Task.Name,
+                    TaskIndex = args.task.TaskIndex,
+                    TotalTasks = args.task.TotalTasks,
+                    Timestamp = DateTime.UtcNow
+                };
+
+                // Broadcast to group subscribed to this specific run
+                await hubContext.Clients.Group($"run_{args.run.Id}").SendAsync("taskStarted", dto);
+            }
+            catch (Exception ex)
+            {
+                factory.Log($"Error broadcasting taskStarted: {ex.Message}");
+            }
+        }
+
+        private async void OnTaskCompleted(object sender, (TestRun run, string botName, TaskCompletedEventArgs task) args)
+        {
+            try
+            {
+                var dto = new ApiTaskCompletedEvent
+                {
+                    RunId = args.run.Id,
+                    BotName = args.botName,
+                    TaskName = args.task.Task.Name,
+                    TaskIndex = args.task.TaskIndex,
+                    TotalTasks = args.task.TotalTasks,
+                    Result = args.task.Result.ToString(),
+                    DurationSeconds = args.task.Duration.TotalSeconds,
+                    ErrorMessage = args.task.ErrorMessage,
+                    Timestamp = DateTime.UtcNow
+                };
+
+                // Broadcast to group subscribed to this specific run
+                await hubContext.Clients.Group($"run_{args.run.Id}").SendAsync("taskCompleted", dto);
+            }
+            catch (Exception ex)
+            {
+                factory.Log($"Error broadcasting taskCompleted: {ex.Message}");
             }
         }
     }

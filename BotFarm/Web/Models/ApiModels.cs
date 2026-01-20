@@ -310,4 +310,29 @@ namespace BotFarm.Web.Models
     {
         public List<EntitySearchResult> Results { get; set; } = new();
     }
+
+    // ============ Task Progress Event Models ============
+
+    public class ApiTaskStartedEvent
+    {
+        public string RunId { get; set; }
+        public string BotName { get; set; }
+        public string TaskName { get; set; }
+        public int TaskIndex { get; set; }
+        public int TotalTasks { get; set; }
+        public DateTime Timestamp { get; set; }
+    }
+
+    public class ApiTaskCompletedEvent
+    {
+        public string RunId { get; set; }
+        public string BotName { get; set; }
+        public string TaskName { get; set; }
+        public int TaskIndex { get; set; }
+        public int TotalTasks { get; set; }
+        public string Result { get; set; }  // "Success", "Failed", "Skipped"
+        public double DurationSeconds { get; set; }
+        public string ErrorMessage { get; set; }
+        public DateTime Timestamp { get; set; }
+    }
 }
