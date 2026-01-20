@@ -86,6 +86,9 @@ namespace BotFarm.AI.Tasks
         private ClaimedTargetRegistry claimRegistry;
         private string routeFilePath;
 
+        // Task start position for recovery/teleport
+        private Position taskStartPosition;
+
         // Looting state
         private ulong corpseGuid;
         private Position corpsePosition;
@@ -224,6 +227,9 @@ namespace BotFarm.AI.Tasks
                 game.Log("AdventureTask: Game is not a BotGame instance", LogLevel.Error);
                 return false;
             }
+
+            // Capture start position for recovery
+            taskStartPosition = game.Player.GetPosition();
 
             // Get combat AI for the player's class
             var playerClass = game.World.SelectedCharacter?.Class ?? Class.Warrior;
@@ -496,15 +502,15 @@ namespace BotFarm.AI.Tasks
 
             if (consecutivePathFailures >= MaxPathFailuresBeforeSkip)
             {
-                game.Log($"AdventureTask: Target unreachable after {consecutivePathFailures} attempts, returning to center", LogLevel.Warning);
+                game.Log($"AdventureTask: Target unreachable after {consecutivePathFailures} attempts, returning to task start", LogLevel.Warning);
                 unpathableTargets.Add(currentTarget.GUID);
                 ReleaseCurrentTarget(game);
 
-                // Return to center position if available
-                if (centerPosition != null)
+                // Return to task start position if available
+                if (taskStartPosition != null)
                 {
                     state = AdventureState.ReturningToCenter;
-                    game.MoveTo(centerPosition);
+                    game.MoveTo(taskStartPosition);
                 }
                 return TaskResult.Running;
             }
@@ -600,10 +606,10 @@ namespace BotFarm.AI.Tasks
                 combatStallCount++;
                 game.Log($"AdventureTask: Combat stalled for {CombatStallTimeoutSeconds}s (stall #{combatStallCount})", LogLevel.Warning);
 
-                // Check if we've stalled too many times - teleport back to center
-                if (combatStallCount >= MaxCombatStallsBeforeTeleport && centerPosition != null)
+                // Check if we've stalled too many times - teleport back to task start
+                if (combatStallCount >= MaxCombatStallsBeforeTeleport && taskStartPosition != null)
                 {
-                    game.Log($"AdventureTask: Too many combat stalls ({combatStallCount}), teleporting to center", LogLevel.Warning);
+                    game.Log($"AdventureTask: Too many combat stalls ({combatStallCount}), teleporting to task start", LogLevel.Warning);
 
                     // Stop combat and release target
                     game.CancelActionsByFlag(ActionFlag.Movement);
@@ -617,12 +623,12 @@ namespace BotFarm.AI.Tasks
                     unpathableTargets.Add(currentTarget.GUID);
                     currentTarget = null;
 
-                    // Teleport to center
+                    // Teleport to task start position
                     game.TeleportToPosition(
-                        centerPosition.X,
-                        centerPosition.Y,
-                        centerPosition.Z,
-                        (uint)centerPosition.MapID);
+                        taskStartPosition.X,
+                        taskStartPosition.Y,
+                        taskStartPosition.Z,
+                        (uint)taskStartPosition.MapID);
 
                     combatStallCount = 0;
                     state = AdventureState.Searching;
@@ -800,15 +806,15 @@ namespace BotFarm.AI.Tasks
 
             if (consecutivePathFailures >= MaxPathFailuresBeforeSkip)
             {
-                game.Log($"AdventureTask: Object unreachable after {consecutivePathFailures} attempts, returning to center", LogLevel.Warning);
+                game.Log($"AdventureTask: Object unreachable after {consecutivePathFailures} attempts, returning to task start", LogLevel.Warning);
                 unpathableTargets.Add(currentObjectTarget.GUID);
                 ReleaseCurrentObject(game);
 
-                // Return to center position if available
-                if (centerPosition != null)
+                // Return to task start position if available
+                if (taskStartPosition != null)
                 {
                     state = AdventureState.ReturningToCenter;
-                    game.MoveTo(centerPosition);
+                    game.MoveTo(taskStartPosition);
                 }
                 return TaskResult.Running;
             }
@@ -906,19 +912,19 @@ namespace BotFarm.AI.Tasks
 
         private TaskResult HandleReturningToCenter(BotGame game)
         {
-            if (centerPosition == null)
+            if (taskStartPosition == null)
             {
                 state = AdventureState.Searching;
                 return TaskResult.Running;
             }
 
             // Teleport directly using GM command - we're in this state because pathfinding failed
-            game.Log("AdventureTask: Teleporting to center position using GM command", LogLevel.Warning);
+            game.Log("AdventureTask: Teleporting to task start position using GM command", LogLevel.Warning);
             game.TeleportToPosition(
-                centerPosition.X,
-                centerPosition.Y,
-                centerPosition.Z,
-                (uint)centerPosition.MapID);
+                taskStartPosition.X,
+                taskStartPosition.Y,
+                taskStartPosition.Z,
+                (uint)taskStartPosition.MapID);
 
             // Wait a moment for teleport to complete, then resume searching
             state = AdventureState.Searching;
