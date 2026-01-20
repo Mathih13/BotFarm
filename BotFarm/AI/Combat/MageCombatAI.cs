@@ -19,8 +19,6 @@ namespace BotFarm.AI.Combat
         private const float FIREBALL_CAST_TIME = 3.0f;
         private const float FROSTBOLT_CAST_TIME = 2.5f;
 
-        private bool hasArcaneIntellect = false;
-
         public MageCombatAI()
         {
             lowHealthThreshold = 40f;
@@ -39,33 +37,33 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return;
 
-            // Priority 1: Frost Nova if target is too close (kiting)
+            // Priority 1: Frost Nova if target is too close (kiting) - level 10
             float distanceToTarget = (player.GetPosition() - target.GetPosition()).Length;
-            if (distanceToTarget < 8.0f && player.Mana >= 55)
+            if (distanceToTarget < 8.0f && player.Level >= 10 && CanCastSpell(game, FROST_NOVA, 55))
             {
-                game.CastSpellOnSelf(FROST_NOVA);
+                TryCastSpellOnSelf(game, FROST_NOVA);
                 return;
             }
 
-            // Priority 2: Fire Blast (instant, use when available)
-            if (player.Mana >= 40)
+            // Priority 2: Fire Blast (instant, level 6) - weave between Fireballs when off cooldown
+            if (player.Level >= 6 && CanCastSpell(game, FIRE_BLAST, 40))
             {
-                game.CastSpell(FIRE_BLAST, target.GUID);
+                TryCastSpell(game, FIRE_BLAST, target.GUID);
                 return;
             }
 
-            // Priority 3: Fireball as filler (higher mana cost, check first)
+            // Priority 3: Fireball as main nuke - level 1
             if (player.Mana >= 30)
             {
                 TryCastSpell(game, FIREBALL, target.GUID, FIREBALL_CAST_TIME);
                 return;
             }
 
-            // Priority 4: Frostbolt (preferred for slow + damage)
-            if (player.Mana >= 25)
+            // Priority 4: Frostbolt as backup (lower mana cost) - level 4
+            if (player.Level >= 4 && player.Mana >= 25)
             {
                 TryCastSpell(game, FROSTBOLT, target.GUID, FROSTBOLT_CAST_TIME);
                 return;
@@ -84,14 +82,13 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return false;
 
-            // Buff Arcane Intellect if not active
-            if (!hasArcaneIntellect && player.Mana >= 60)
+            // Buff Arcane Intellect if not active (check via server aura state)
+            if (!game.HasBuff(ARCANE_INTELLECT) && player.Mana >= 60)
             {
-                game.CastSpellOnSelf(ARCANE_INTELLECT);
-                hasArcaneIntellect = true;
+                TryCastSpellOnSelf(game, ARCANE_INTELLECT);
             }
 
             return base.OnRest(game);

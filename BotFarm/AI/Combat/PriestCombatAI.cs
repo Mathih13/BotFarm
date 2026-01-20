@@ -20,9 +20,8 @@ namespace BotFarm.AI.Combat
         private const float SMITE_CAST_TIME = 2.5f;
         private const float LESSER_HEAL_CAST_TIME = 2.0f;
 
-        private bool hasShield = false;
+        // Track if SWP was applied this combat (server doesn't track debuffs on enemy)
         private bool hasAppliedSWP = false;
-        private bool hasFortitude = false;
 
         public PriestCombatAI()
         {
@@ -36,7 +35,6 @@ namespace BotFarm.AI.Combat
         {
             base.OnCombatStart(game, target);
             hasAppliedSWP = false;
-            hasShield = false;
         }
 
         public override void OnCombatUpdate(AutomatedGame game, WorldObject target)
@@ -44,7 +42,7 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return;
 
             // Priority 1: Heal self if low health
@@ -54,18 +52,18 @@ namespace BotFarm.AI.Combat
                 return;
             }
 
-            // Priority 2: Shield self if not active and taking damage (instant)
-            if (!hasShield && player.HealthPercent < 80 && player.Mana >= 45)
+            // Priority 2: Shield self if not active and taking damage (uses server aura state)
+            // Power Word: Shield has Weakened Soul debuff, so cooldown is tracked via aura
+            if (!game.HasBuff(POWER_WORD_SHIELD) && player.HealthPercent < 80 && CanCastSpell(game, POWER_WORD_SHIELD, 45))
             {
-                game.CastSpellOnSelf(POWER_WORD_SHIELD);
-                hasShield = true;
+                TryCastSpellOnSelf(game, POWER_WORD_SHIELD);
                 return;
             }
 
             // Priority 3: Apply Shadow Word: Pain if not on target (instant)
             if (!hasAppliedSWP && player.Mana >= 25)
             {
-                game.CastSpell(SHADOW_WORD_PAIN, target.GUID);
+                TryCastSpell(game, SHADOW_WORD_PAIN, target.GUID);
                 hasAppliedSWP = true;
                 return;
             }
@@ -84,7 +82,6 @@ namespace BotFarm.AI.Combat
         {
             base.OnCombatEnd(game);
             hasAppliedSWP = false;
-            hasShield = false;
         }
 
         public override bool OnRest(AutomatedGame game)
@@ -92,14 +89,13 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return false;
 
-            // Buff Fortitude if not active (instant)
-            if (!hasFortitude && player.Mana >= 60)
+            // Buff Fortitude if not active (uses server aura state)
+            if (!game.HasBuff(POWER_WORD_FORTITUDE) && player.Mana >= 60)
             {
-                game.CastSpellOnSelf(POWER_WORD_FORTITUDE);
-                hasFortitude = true;
+                TryCastSpellOnSelf(game, POWER_WORD_FORTITUDE);
             }
 
             // Heal up if injured

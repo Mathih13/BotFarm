@@ -335,4 +335,38 @@ namespace BotFarm.Web.Models
         public string ErrorMessage { get; set; }
         public DateTime Timestamp { get; set; }
     }
+
+    // ============ Suite Definition Editor Models ============
+
+    public class ApiSuiteDefinitionInfo
+    {
+        public string Path { get; set; }
+        public string Name { get; set; }
+        public int TestCount { get; set; }
+    }
+
+    public class ApiSuiteDefinitionDetail
+    {
+        public string Path { get; set; }
+        public string Name { get; set; }
+        public List<ApiSuiteTestEntry> Tests { get; set; }
+        public string RawJson { get; set; }
+    }
+
+    public class ApiSuiteTestEntry
+    {
+        public string Route { get; set; }
+        public List<string> DependsOn { get; set; }
+    }
+
+    public class CreateSuiteDefinitionRequest
+    {
+        public string Path { get; set; }
+        public string Content { get; set; }
+    }
+
+    public class UpdateSuiteDefinitionRequest
+    {
+        public string Content { get; set; }
+    }
 }

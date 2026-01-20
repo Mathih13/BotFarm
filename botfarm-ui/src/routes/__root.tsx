@@ -7,12 +7,23 @@ import {
   createRootRoute,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import * as React from 'react'
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { NotFound } from '~/components/NotFound'
 import appCss from '~/styles/app.css?url'
 import { seo } from '~/utils/seo'
 import { useSignalR } from '~/lib/signalr'
+
+// Create a client outside the component to avoid re-creating on every render
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+})
 
 export const Route = createRootRoute({
   head: () => ({
@@ -43,12 +54,13 @@ function RootComponent() {
   const { isConnected, error } = useSignalR()
 
   return (
-    <html>
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <div className="min-h-screen flex flex-col bg-gray-50">
+    <QueryClientProvider client={queryClient}>
+      <html>
+        <head>
+          <HeadContent />
+        </head>
+        <body>
+          <div className="min-h-screen flex flex-col bg-gray-50">
           {/* Header */}
           <header className="bg-white border-b border-gray-200 shadow-sm">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -114,9 +126,10 @@ function RootComponent() {
             <Outlet />
           </main>
         </div>
-        <TanStackRouterDevtools position="bottom-right" />
-        <Scripts />
-      </body>
-    </html>
+          <TanStackRouterDevtools position="bottom-right" />
+          <Scripts />
+        </body>
+      </html>
+    </QueryClientProvider>
   )
 }

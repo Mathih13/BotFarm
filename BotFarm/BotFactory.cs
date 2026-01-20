@@ -29,7 +29,7 @@ namespace BotFarm
         }
 
         List<BotGame> bots = new List<BotGame>();
-        RemoteAccess remoteAccess;
+        RemoteAccessPool remoteAccessPool;
         DatabaseAccess databaseAccess;
         List<BotInfo> botInfos;
         const string botsInfosPath = "botsinfos.xml";
@@ -191,18 +191,11 @@ namespace BotFarm
                     Log("All initializations complete");
                     logger.Flush();
 
-                    // Initialize RemoteAccess connection once for all bots
-                    Log("Connecting to Remote Access for account creation");
-                    remoteAccess = new RemoteAccess(Settings.Default.Hostname, Settings.Default.RAPort,
-                                                     Settings.Default.Username, Settings.Default.Password);
-                    if (!remoteAccess.Connect())
-                    {
-                        Log("Failed to connect to Remote Access - account creation will fail!");
-                    }
-                    else
-                    {
-                        Log("Remote Access connected successfully");
-                    }
+                    // Initialize RemoteAccess connection pool for parallel account creation
+                    Log("Initializing Remote Access connection pool for account creation");
+                    remoteAccessPool = new RemoteAccessPool(Settings.Default.Hostname, Settings.Default.RAPort,
+                                                     Settings.Default.Username, Settings.Default.Password, maxSize: 4);
+                    Log("Remote Access pool initialized (connections created on demand)");
                     logger.Flush();
 
                     // Initialize MySQL database access for quest completion
@@ -305,21 +298,26 @@ namespace BotFarm
             
             Console.WriteLine($"CreateBot: Generated username={username}, password={password}");
             
-            // Use the shared RemoteAccess connection with locking for thread safety
-            if (remoteAccess != null)
+            // Use the connection pool for parallel account creation
+            if (remoteAccessPool != null)
             {
-                lock (remoteAccess)
+                var ra = remoteAccessPool.GetConnection();
+                try
                 {
                     Console.WriteLine($"CreateBot: Sending create account command for {username} with GM level 2");
-                    string response = remoteAccess.SendCommand($".account create {username} {password} 2");
+                    string response = ra.SendCommand($".account create {username} {password} 2");
                     Log($"RA create account {username} (GM level 2) response: {response}");
                     Console.WriteLine($"CreateBot: RA response: {response}");
+                }
+                finally
+                {
+                    remoteAccessPool.ReturnConnection(ra);
                 }
             }
             else
             {
-                Log("RemoteAccess is null, cannot create account!");
-                Console.WriteLine("CreateBot: RemoteAccess is null!");
+                Log("RemoteAccessPool is null, cannot create account!");
+                Console.WriteLine("CreateBot: RemoteAccessPool is null!");
             }
 
             uint behaviorRandomIndex = (uint)randomGenerator.Next(100);
@@ -381,22 +379,27 @@ namespace BotFarm
             // Create account via RA with GM level 3 (will succeed if new, fail silently if exists)
             // GM level 3 required for .quest add/.quest complete commands
             // Then set GM level explicitly in case account already existed with lower level
-            if (remoteAccess != null)
+            if (remoteAccessPool != null)
             {
-                lock (remoteAccess)
+                var ra = remoteAccessPool.GetConnection();
+                try
                 {
-                    string response = remoteAccess.SendCommand($".account create {username} {testPassword} 3");
+                    string response = ra.SendCommand($".account create {username} {testPassword} 3");
                     Log($"RA create account {username} response: {response}");
 
                     // Set GM level explicitly - needed if account already existed from previous run
                     // -1 means all realms
-                    string gmResponse = remoteAccess.SendCommand($".account set gmlevel {username} 3 -1");
+                    string gmResponse = ra.SendCommand($".account set gmlevel {username} 3 -1");
                     Log($"RA set gmlevel {username} to 3: {gmResponse}");
+                }
+                finally
+                {
+                    remoteAccessPool.ReturnConnection(ra);
                 }
             }
             else
             {
-                Log("RemoteAccess is null, cannot create account!", LogLevel.Warning);
+                Log("RemoteAccessPool is null, cannot create account!", LogLevel.Warning);
             }
 
             BotGame game = new BotGame(Settings.Default.Hostname,
@@ -417,25 +420,50 @@ namespace BotFarm
         }
 
         /// <summary>
+        /// Delete a test account via Remote Access.
+        /// Used for cleanup after test runs to avoid accumulating stray accounts.
+        /// </summary>
+        public void DeleteTestAccount(string username)
+        {
+            if (remoteAccessPool == null)
+            {
+                Log($"RemoteAccessPool is null, cannot delete account {username}", LogLevel.Warning);
+                return;
+            }
+
+            var ra = remoteAccessPool.GetConnection();
+            try
+            {
+                string response = ra.SendCommand($".account delete {username}");
+                Log($"RA delete account {username}: {response}");
+            }
+            finally
+            {
+                remoteAccessPool.ReturnConnection(ra);
+            }
+        }
+
+        /// <summary>
         /// Set up a character via Remote Access commands (level, items, completed quests)
         /// Character must be offline for these commands to work
         /// </summary>
         public void SetupCharacterViaRA(string characterName, int level, List<ItemGrant> items, List<uint> completedQuests = null)
         {
-            if (remoteAccess == null)
+            if (remoteAccessPool == null)
             {
-                Log("RemoteAccess is null, cannot setup character via RA", LogLevel.Warning);
+                Log("RemoteAccessPool is null, cannot setup character via RA", LogLevel.Warning);
                 return;
             }
 
-            lock (remoteAccess)
+            var ra = remoteAccessPool.GetConnection();
+            try
             {
                 // Set character level if > 1
                 if (level > 1)
                 {
                     string levelCmd = $".character level {characterName} {level}";
                     Log($"RA: Setting character {characterName} to level {level}");
-                    string response = remoteAccess.SendCommand(levelCmd);
+                    string response = ra.SendCommand(levelCmd);
                     Log($"RA level response: {response}");
                 }
 
@@ -446,11 +474,14 @@ namespace BotFarm
                     {
                         string itemCmd = $".send items {characterName} \"Test Setup\" \"Items for testing\" {item.Entry}:{item.Count}";
                         Log($"RA: Sending item {item.Entry}x{item.Count} to {characterName}");
-                        string response = remoteAccess.SendCommand(itemCmd);
+                        string response = ra.SendCommand(itemCmd);
                         Log($"RA item response: {response}");
                     }
                 }
-
+            }
+            finally
+            {
+                remoteAccessPool.ReturnConnection(ra);
             }
 
             // Complete prerequisite quests via direct MySQL (RA doesn't support quest complete for offline chars)
@@ -474,18 +505,23 @@ namespace BotFarm
         /// </summary>
         public void TeleportCharacterViaRA(string characterName, uint mapId, float x, float y, float z)
         {
-            if (remoteAccess == null)
+            if (remoteAccessPool == null)
             {
-                Log("RemoteAccess is null, cannot teleport character via RA", LogLevel.Warning);
+                Log("RemoteAccessPool is null, cannot teleport character via RA", LogLevel.Warning);
                 return;
             }
 
-            lock (remoteAccess)
+            var ra = remoteAccessPool.GetConnection();
+            try
             {
                 string teleportCmd = $".tele name {characterName} {mapId} {x} {y} {z}";
                 Log($"RA: Teleporting {characterName} to ({x}, {y}, {z}) on map {mapId}");
-                string response = remoteAccess.SendCommand(teleportCmd);
+                string response = ra.SendCommand(teleportCmd);
                 Log($"RA teleport response: {response}");
+            }
+            finally
+            {
+                remoteAccessPool.ReturnConnection(ra);
             }
         }
 
@@ -1070,10 +1106,10 @@ namespace BotFarm
 
             Task.WaitAll(botsDisposing.ToArray(), new TimeSpan(0, 2, 0));
 
-            if (remoteAccess != null)
+            if (remoteAccessPool != null)
             {
-                remoteAccess.Dispose();
-                remoteAccess = null;
+                remoteAccessPool.Dispose();
+                remoteAccessPool = null;
             }
 
             if (databaseAccess != null)

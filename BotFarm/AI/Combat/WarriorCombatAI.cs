@@ -15,8 +15,8 @@ namespace BotFarm.AI.Combat
         private const uint REND = 772;               // DoT, 10 rage
         private const uint THUNDER_CLAP = 6343;      // AoE slow, 20 rage (level 6)
         private const uint CHARGE = 100;             // Gap closer, generates 15 rage (level 4)
-        
-        private bool hasBattleShout = false;
+
+        // Track Rend applied this combat (server doesn't track debuffs on enemy)
         private bool hasAppliedRend = false;
 
         public WarriorCombatAI()
@@ -35,15 +35,14 @@ namespace BotFarm.AI.Combat
         {
             var player = game.Player;
             uint rage = player.Rage;
-            
-            // Priority 1: Battle Shout if not active (buff)
-            if (!hasBattleShout && rage >= 10)
+
+            // Priority 1: Battle Shout if not active (uses server aura state)
+            if (!game.HasBuff(BATTLE_SHOUT) && rage >= 10)
             {
                 game.CastSpellOnSelf(BATTLE_SHOUT);
-                hasBattleShout = true;
                 return;
             }
-            
+
             // Priority 2: Rend if not applied (DoT for damage over time)
             if (!hasAppliedRend && rage >= 10)
             {
@@ -51,14 +50,14 @@ namespace BotFarm.AI.Combat
                 hasAppliedRend = true;
                 return;
             }
-            
+
             // Priority 3: Heroic Strike as rage dump
             if (rage >= 15)
             {
                 game.CastSpell(HEROIC_STRIKE, target.GUID);
                 return;
             }
-            
+
             // Otherwise just auto-attack (handled by server once attack started)
         }
 

@@ -308,7 +308,7 @@ function ActiveTestCard({ test }: { test: ApiTestRun }) {
       <div className="flex justify-between items-start mb-2">
         <div>
           <div className="font-medium">{test.routeName}</div>
-          <div className="text-xs text-muted-foreground">{test.routePath}</div>
+
         </div>
         <Badge variant="outline" className={getStatusColor(test.status)}>
           {getStatusIcon(test.status)} {test.status}

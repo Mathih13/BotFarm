@@ -19,6 +19,8 @@ import { Route as TestsIndexRouteImport } from './routes/tests.index'
 import { Route as SuitesIndexRouteImport } from './routes/suites.index'
 import { Route as RoutesIndexRouteImport } from './routes/routes.index'
 import { Route as TestsTestIdRouteImport } from './routes/tests.$testId'
+import { Route as SuitesEditorRouteImport } from './routes/suites.editor'
+import { Route as SuitesDefinitionsRouteImport } from './routes/suites.definitions'
 import { Route as SuitesSuiteIdRouteImport } from './routes/suites.$suiteId'
 import { Route as RoutesEditorRouteImport } from './routes/routes.editor'
 
@@ -72,6 +74,16 @@ const TestsTestIdRoute = TestsTestIdRouteImport.update({
   path: '/$testId',
   getParentRoute: () => TestsRoute,
 } as any)
+const SuitesEditorRoute = SuitesEditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => SuitesRoute,
+} as any)
+const SuitesDefinitionsRoute = SuitesDefinitionsRouteImport.update({
+  id: '/definitions',
+  path: '/definitions',
+  getParentRoute: () => SuitesRoute,
+} as any)
 const SuitesSuiteIdRoute = SuitesSuiteIdRouteImport.update({
   id: '/$suiteId',
   path: '/$suiteId',
@@ -92,6 +104,8 @@ export interface FileRoutesByFullPath {
   '/tests': typeof TestsRouteWithChildren
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
+  '/suites/definitions': typeof SuitesDefinitionsRoute
+  '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
   '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
@@ -103,6 +117,8 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
+  '/suites/definitions': typeof SuitesDefinitionsRoute
+  '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
   '/routes': typeof RoutesIndexRoute
   '/suites': typeof SuitesIndexRoute
@@ -118,6 +134,8 @@ export interface FileRoutesById {
   '/tests': typeof TestsRouteWithChildren
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
+  '/suites/definitions': typeof SuitesDefinitionsRoute
+  '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
   '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
@@ -134,6 +152,8 @@ export interface FileRouteTypes {
     | '/tests'
     | '/routes/editor'
     | '/suites/$suiteId'
+    | '/suites/definitions'
+    | '/suites/editor'
     | '/tests/$testId'
     | '/routes/'
     | '/suites/'
@@ -145,6 +165,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/routes/editor'
     | '/suites/$suiteId'
+    | '/suites/definitions'
+    | '/suites/editor'
     | '/tests/$testId'
     | '/routes'
     | '/suites'
@@ -159,6 +181,8 @@ export interface FileRouteTypes {
     | '/tests'
     | '/routes/editor'
     | '/suites/$suiteId'
+    | '/suites/definitions'
+    | '/suites/editor'
     | '/tests/$testId'
     | '/routes/'
     | '/suites/'
@@ -246,6 +270,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TestsTestIdRouteImport
       parentRoute: typeof TestsRoute
     }
+    '/suites/editor': {
+      id: '/suites/editor'
+      path: '/editor'
+      fullPath: '/suites/editor'
+      preLoaderRoute: typeof SuitesEditorRouteImport
+      parentRoute: typeof SuitesRoute
+    }
+    '/suites/definitions': {
+      id: '/suites/definitions'
+      path: '/definitions'
+      fullPath: '/suites/definitions'
+      preLoaderRoute: typeof SuitesDefinitionsRouteImport
+      parentRoute: typeof SuitesRoute
+    }
     '/suites/$suiteId': {
       id: '/suites/$suiteId'
       path: '/$suiteId'
@@ -278,11 +316,15 @@ const RoutesRouteWithChildren =
 
 interface SuitesRouteChildren {
   SuitesSuiteIdRoute: typeof SuitesSuiteIdRoute
+  SuitesDefinitionsRoute: typeof SuitesDefinitionsRoute
+  SuitesEditorRoute: typeof SuitesEditorRoute
   SuitesIndexRoute: typeof SuitesIndexRoute
 }
 
 const SuitesRouteChildren: SuitesRouteChildren = {
   SuitesSuiteIdRoute: SuitesSuiteIdRoute,
+  SuitesDefinitionsRoute: SuitesDefinitionsRoute,
+  SuitesEditorRoute: SuitesEditorRoute,
   SuitesIndexRoute: SuitesIndexRoute,
 }
 

@@ -82,16 +82,27 @@ function TestsIndex() {
     return true
   })
 
-  const handleStartTest = () => {
+  const handleStartTest = async () => {
     if (!selectedRoute) return
-    // Close dialog immediately - SignalR will show the test when it starts
+    // Close dialog immediately
     setShowNewTest(false)
     const routePath = selectedRoute
     setSelectedRoute('')
-    // Fire and forget - errors will show in the main error banner
-    testsApi.start({ routePath }).catch((err) => {
+
+    try {
+      // Start the test
+      const newRun = await testsApi.start({ routePath })
+      // Immediately add to list as fallback in case SignalR event is missed
+      setTests((prev) => {
+        // Check if already added by SignalR
+        if (prev.some(r => r.id === newRun.id)) {
+          return prev
+        }
+        return [newRun, ...prev]
+      })
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start test')
-    })
+    }
   }
 
   const handleStopTest = async (testId: string, e: React.MouseEvent) => {

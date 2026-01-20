@@ -1,7 +1,6 @@
 using Client;
 using Client.UI;
 using Client.World.Entities;
-using System;
 
 namespace BotFarm.AI.Combat
 {
@@ -21,14 +20,6 @@ namespace BotFarm.AI.Combat
 
         // Cast times (at low level, no spell haste)
         private const float HOLY_LIGHT_CAST_TIME = 2.5f;
-        
-        // Seal lasts 30 seconds, but we'll refresh more conservatively
-        private const float SEAL_DURATION_SECONDS = 25f;
-        
-        private DateTime sealAppliedTime = DateTime.MinValue;
-        private DateTime lastJudgementTime = DateTime.MinValue;
-        private bool hasBlessing = false;
-        private bool hasAura = false;
 
         public PaladinCombatAI()
         {
@@ -38,12 +29,14 @@ namespace BotFarm.AI.Combat
             restUntilManaPercent = 60f;
         }
 
-        private bool HasActiveSeal => (DateTime.Now - sealAppliedTime).TotalSeconds < SEAL_DURATION_SECONDS;
+        /// <summary>
+        /// Check if seal is active using server-authoritative aura state
+        /// </summary>
+        private bool HasActiveSeal(AutomatedGame game) => game.HasBuff(SEAL_OF_RIGHTEOUSNESS);
 
         public override void OnCombatStart(AutomatedGame game, WorldObject target)
         {
             base.OnCombatStart(game, target);
-            // Don't reset seal timer - seal persists between combats
         }
 
         public override void OnCombatUpdate(AutomatedGame game, WorldObject target)
@@ -51,7 +44,7 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return;
 
             // Priority 1: Heal self if low health
@@ -62,33 +55,31 @@ namespace BotFarm.AI.Combat
             }
 
             // Priority 2: Divine Protection if very low health (instant)
-            if (player.HealthPercent < 25 && player.Mana >= 20)
+            if (player.HealthPercent < 25 && CanCastSpell(game, DIVINE_PROTECTION, 20))
             {
-                game.CastSpellOnSelf(DIVINE_PROTECTION);
+                TryCastSpellOnSelf(game, DIVINE_PROTECTION);
                 return;
             }
 
-            // Priority 3: Apply Seal of Righteousness if not active or expired (instant)
-            if (!HasActiveSeal && player.Mana >= 20)
+            // Priority 3: Apply Seal of Righteousness if not active (uses server aura state)
+            if (!HasActiveSeal(game) && player.Mana >= 20)
             {
-                game.CastSpellOnSelf(SEAL_OF_RIGHTEOUSNESS);
-                sealAppliedTime = DateTime.Now;
+                TryCastSpellOnSelf(game, SEAL_OF_RIGHTEOUSNESS);
                 return;
             }
 
-            // Priority 4: Judgement when seal is active (instant, doesn't consume seal in WotLK)
-            // Add cooldown check - Judgement has ~8-10 second cooldown
-            if (HasActiveSeal && player.Mana >= 30 && (DateTime.Now - lastJudgementTime).TotalSeconds > 10)
+            // Priority 4: Judgement when seal is active (uses server cooldown state)
+            // Judgement has ~8-10 second cooldown - now tracked via SMSG_SPELL_COOLDOWN
+            if (HasActiveSeal(game) && CanCastSpell(game, JUDGEMENT, 30))
             {
-                game.CastSpell(JUDGEMENT, target.GUID);
-                lastJudgementTime = DateTime.Now;
+                TryCastSpell(game, JUDGEMENT, target.GUID);
                 return;
             }
 
             // Priority 5: Hammer of Justice to stun (instant, useful for healing window)
-            if (player.HealthPercent < 50 && player.Mana >= 20)
+            if (player.HealthPercent < 50 && CanCastSpell(game, HAMMER_OF_JUSTICE, 20))
             {
-                game.CastSpell(HAMMER_OF_JUSTICE, target.GUID);
+                TryCastSpell(game, HAMMER_OF_JUSTICE, target.GUID);
                 return;
             }
 
@@ -98,7 +89,6 @@ namespace BotFarm.AI.Combat
         public override void OnCombatEnd(AutomatedGame game)
         {
             base.OnCombatEnd(game);
-            // Don't reset seal - it persists
         }
 
         public override bool OnRest(AutomatedGame game)
@@ -106,28 +96,25 @@ namespace BotFarm.AI.Combat
             var player = game.Player;
 
             // Don't interrupt current cast
-            if (IsCasting)
+            if (IsCasting(game))
                 return false;
 
-            // Apply Devotion Aura if not active (instant)
-            if (!hasAura && player.Mana >= 20)
+            // Apply Devotion Aura if not active (uses server aura state)
+            if (!game.HasBuff(DEVOTION_AURA) && player.Mana >= 20)
             {
-                game.CastSpellOnSelf(DEVOTION_AURA);
-                hasAura = true;
+                TryCastSpellOnSelf(game, DEVOTION_AURA);
             }
 
-            // Apply Blessing of Might if not active (instant)
-            if (!hasBlessing && player.Mana >= 30)
+            // Apply Blessing of Might if not active (uses server aura state)
+            if (!game.HasBuff(BLESSING_OF_MIGHT) && player.Mana >= 30)
             {
-                game.CastSpellOnSelf(BLESSING_OF_MIGHT);
-                hasBlessing = true;
+                TryCastSpellOnSelf(game, BLESSING_OF_MIGHT);
             }
 
             // Apply Seal during rest if not active (instant, so we're ready for combat)
-            if (!HasActiveSeal && player.Mana >= 20)
+            if (!HasActiveSeal(game) && player.Mana >= 20)
             {
-                game.CastSpellOnSelf(SEAL_OF_RIGHTEOUSNESS);
-                sealAppliedTime = DateTime.Now;
+                TryCastSpellOnSelf(game, SEAL_OF_RIGHTEOUSNESS);
             }
 
             // Heal up if injured

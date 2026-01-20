@@ -93,11 +93,16 @@ namespace BotFarm.Testing
         public DateTime StartTime { get; }
         public DateTime? EndTime { get; set; }
 
+        private int? _totalTasks;
+
         public TimeSpan Duration => (EndTime ?? DateTime.UtcNow) - StartTime;
         public int TasksCompleted => TaskResults.FindAll(t => t.Result == TaskResult.Success).Count;
         public int TasksFailed => TaskResults.FindAll(t => t.Result == TaskResult.Failed).Count;
         public int TasksSkipped => TaskResults.FindAll(t => t.Result == TaskResult.Skipped).Count;
-        public int TotalTasks => TaskResults.Count;
+        /// <summary>
+        /// Total number of tasks in the route. Set from task events, falls back to completed count.
+        /// </summary>
+        public int TotalTasks => _totalTasks ?? TaskResults.Count;
 
         public BotTestResult(string botName, string characterName, string characterClass)
         {
@@ -105,6 +110,14 @@ namespace BotFarm.Testing
             CharacterName = characterName;
             CharacterClass = characterClass;
             StartTime = DateTime.UtcNow;
+        }
+
+        /// <summary>
+        /// Sets the total task count for this bot's route execution
+        /// </summary>
+        public void SetTotalTasks(int totalTasks)
+        {
+            _totalTasks = totalTasks;
         }
 
         public void AddTaskResult(string taskName, TaskResult result, TimeSpan duration, string errorMessage = null)

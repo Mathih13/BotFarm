@@ -362,21 +362,33 @@ namespace BotFarm.Testing
                 return route;
             }
 
-            // Try relative to suite file first
+            // Try relative to suite file first (for paths like "../northshire/test.json")
             string relativeToSuite = Path.Combine(suiteDir, route);
             if (File.Exists(relativeToSuite))
             {
                 return Path.GetFullPath(relativeToSuite);
             }
 
-            // Try relative to routes directory
-            string routesDir = Path.Combine(suiteDir, "..", "routes");
-            if (Directory.Exists(routesDir))
+            // Try relative to main routes directory (for paths like "northshire/test.json")
+            // Suite files are in routes/suites/, so go up one level to routes/
+            string routesDir = Path.GetDirectoryName(suiteDir);
+            if (!string.IsNullOrEmpty(routesDir))
             {
                 string relativeToRoutes = Path.Combine(routesDir, route);
                 if (File.Exists(relativeToRoutes))
                 {
                     return Path.GetFullPath(relativeToRoutes);
+                }
+            }
+
+            // Try relative to app's routes directory directly
+            string appRoutesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "routes");
+            if (Directory.Exists(appRoutesDir))
+            {
+                string relativeToAppRoutes = Path.Combine(appRoutesDir, route);
+                if (File.Exists(relativeToAppRoutes))
+                {
+                    return Path.GetFullPath(relativeToAppRoutes);
                 }
             }
 

@@ -19,6 +19,9 @@ import type {
   ConfigStatusResponse,
   PathValidationRequest,
   PathValidationResponse,
+  ApiSuiteDefinitionInfo,
+  ApiSuiteDefinitionDetail,
+  CreateSuiteDefinitionRequest,
 } from './types';
 
 // Use absolute URL in development, relative path in production
@@ -142,4 +145,22 @@ export const configApi = {
       method: 'POST',
       body: JSON.stringify(request),
     }),
+};
+
+// Suite Definitions API (for suite definition CRUD)
+export const suiteDefinitionsApi = {
+  getAll: () => fetchApi<ApiSuiteDefinitionInfo[]>('/suites/definitions'),
+  getByPath: (path: string) => fetchApi<ApiSuiteDefinitionDetail>(`/suites/definitions/${path}`),
+  create: (request: CreateSuiteDefinitionRequest) =>
+    fetchApi<ApiSuiteDefinitionDetail>('/suites/definitions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  update: (path: string, content: string) =>
+    fetchApi<ApiSuiteDefinitionDetail>(`/suites/definitions/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+  delete: (path: string) =>
+    fetchApi<{ message: string }>(`/suites/definitions/${path}`, { method: 'DELETE' }),
 };
