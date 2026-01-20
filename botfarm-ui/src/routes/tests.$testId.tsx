@@ -208,7 +208,6 @@ function TestDetail() {
             &larr; Back to Tests
           </Link>
           <h1 className="text-2xl font-bold">{test.routeName}</h1>
-          <p className="text-muted-foreground">{test.routePath}</p>
         </div>
         <div className="flex items-center gap-4">
           <Badge

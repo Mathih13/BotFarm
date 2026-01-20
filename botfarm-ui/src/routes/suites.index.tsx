@@ -249,7 +249,6 @@ function SuitesIndex() {
                     >
                       {suite.suiteName}
                     </Link>
-                    <div className="text-xs text-muted-foreground">{suite.suitePath}</div>
                   </TableCell>
                   <TableCell>
                     <Badge
