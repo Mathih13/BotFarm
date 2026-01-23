@@ -23,6 +23,7 @@ import {
 import { PositionEditor } from './shared/PositionEditor'
 import { ItemListEditor } from './shared/ItemListEditor'
 import { QuestListEditor } from './shared/QuestListEditor'
+import { EquipmentSetSelector } from './shared/EquipmentSetSelector'
 
 interface HarnessSectionProps {
   harness: HarnessFormData | null
@@ -41,6 +42,8 @@ function getDefaultHarness(): HarnessFormData {
     startPosition: null,
     setupTimeoutSeconds: 120,
     testTimeoutSeconds: 600,
+    equipmentSets: [],
+    classEquipmentSets: {},
   }
 }
 
@@ -250,6 +253,19 @@ export function HarnessSection({ harness, onChange }: HarnessSectionProps) {
                 <ItemListEditor
                   items={harness.items}
                   onChange={(items: ItemRequirement[]) => updateHarness({ items })}
+                />
+              </div>
+
+              {/* Equipment Sets */}
+              <div className="space-y-2">
+                <Label>Equipment Sets</Label>
+                <EquipmentSetSelector
+                  equipmentSets={harness.equipmentSets || []}
+                  classEquipmentSets={harness.classEquipmentSets || {}}
+                  selectedClasses={harness.classes}
+                  onChange={(equipmentSets, classEquipmentSets) =>
+                    updateHarness({ equipmentSets, classEquipmentSets })
+                  }
                 />
               </div>
 

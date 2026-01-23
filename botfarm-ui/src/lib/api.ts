@@ -22,6 +22,9 @@ import type {
   ApiSuiteDefinitionInfo,
   ApiSuiteDefinitionDetail,
   CreateSuiteDefinitionRequest,
+  ApiEquipmentSetInfo,
+  ApiEquipmentSetDetail,
+  CreateEquipmentSetRequest,
 } from './types';
 
 // Use absolute URL in development, relative path in production
@@ -163,4 +166,22 @@ export const suiteDefinitionsApi = {
     }),
   delete: (path: string) =>
     fetchApi<{ message: string }>(`/suites/definitions/${path}`, { method: 'DELETE' }),
+};
+
+// Equipment Sets API (for equipment set CRUD)
+export const equipmentSetsApi = {
+  getAll: () => fetchApi<ApiEquipmentSetInfo[]>('/equipment-sets'),
+  getByName: (name: string) => fetchApi<ApiEquipmentSetDetail>(`/equipment-sets/${encodeURIComponent(name)}`),
+  create: (request: CreateEquipmentSetRequest) =>
+    fetchApi<ApiEquipmentSetDetail>('/equipment-sets', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  update: (name: string, content: string) =>
+    fetchApi<ApiEquipmentSetDetail>(`/equipment-sets/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+  delete: (name: string) =>
+    fetchApi<{ message: string }>(`/equipment-sets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 };
