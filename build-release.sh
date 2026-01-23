@@ -134,10 +134,11 @@ mkdir -p "$RELEASE_DIR/botfarm-ui"
 echo "  Copying .NET output..."
 cp -r "$SCRIPT_DIR/BotFarm/bin/x64/Release/net8.0/"* "$RELEASE_DIR/"
 
-# Copy UI output
+# Copy UI output (preserve .output directory structure for UILauncher)
 if [ "$SKIP_UI" = false ] && [ -d "$SCRIPT_DIR/botfarm-ui/.output" ]; then
     echo "  Copying UI output..."
-    cp -r "$SCRIPT_DIR/botfarm-ui/.output/"* "$RELEASE_DIR/botfarm-ui/"
+    mkdir -p "$RELEASE_DIR/botfarm-ui/.output"
+    cp -r "$SCRIPT_DIR/botfarm-ui/.output/"* "$RELEASE_DIR/botfarm-ui/.output/"
 fi
 
 # Copy native libs
