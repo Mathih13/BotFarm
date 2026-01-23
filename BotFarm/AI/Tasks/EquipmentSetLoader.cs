@@ -62,17 +62,54 @@ namespace BotFarm.AI.Tasks
         public static string GetEquipmentSetsDirectory() => EquipmentSetsDirectory;
 
         /// <summary>
+        /// Sanitize a name to prevent path traversal attacks.
+        /// Returns null if the name contains invalid characters.
+        /// </summary>
+        public static string SanitizeName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+
+            // Reject any path traversal attempts or invalid filename characters
+            if (name.Contains("..") || name.Contains("/") || name.Contains("\\") ||
+                name.Contains(":") || name.Contains("*") || name.Contains("?") ||
+                name.Contains("\"") || name.Contains("<") || name.Contains(">") ||
+                name.Contains("|"))
+            {
+                return null;
+            }
+
+            return name;
+        }
+
+        /// <summary>
+        /// Verify that a file path is within the allowed directory.
+        /// </summary>
+        private static bool IsPathWithinDirectory(string filePath, string directory)
+        {
+            var fullPath = Path.GetFullPath(filePath);
+            var fullDirectory = Path.GetFullPath(directory);
+            return fullPath.StartsWith(fullDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || fullPath.Equals(fullDirectory, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Load an equipment set by name
         /// </summary>
         /// <param name="name">The name of the equipment set (without .json extension)</param>
         /// <returns>The loaded equipment set, or null if not found</returns>
         public static EquipmentSet LoadByName(string name)
         {
-            if (string.IsNullOrWhiteSpace(name))
+            var sanitizedName = SanitizeName(name);
+            if (sanitizedName == null)
                 return null;
 
             // Try to find a file matching the name
-            var filePath = Path.Combine(EquipmentSetsDirectory, $"{name}.json");
+            var filePath = Path.Combine(EquipmentSetsDirectory, $"{sanitizedName}.json");
+
+            // Verify path is within allowed directory
+            if (!IsPathWithinDirectory(filePath, EquipmentSetsDirectory))
+                return null;
             if (!File.Exists(filePath))
             {
                 // Try searching recursively
@@ -163,14 +200,26 @@ namespace BotFarm.AI.Tasks
             if (set == null)
                 throw new ArgumentNullException(nameof(set));
 
+            fileName = fileName ?? set.Name;
+
+            // Remove .json extension for sanitization check
+            var nameToSanitize = fileName;
+            if (nameToSanitize.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                nameToSanitize = nameToSanitize.Substring(0, nameToSanitize.Length - 5);
+
+            var sanitizedName = SanitizeName(nameToSanitize);
+            if (sanitizedName == null)
+                throw new ArgumentException("Invalid file name: contains path traversal characters", nameof(fileName));
+
             if (!Directory.Exists(EquipmentSetsDirectory))
                 Directory.CreateDirectory(EquipmentSetsDirectory);
 
-            fileName = fileName ?? set.Name;
-            if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                fileName += ".json";
-
+            fileName = sanitizedName + ".json";
             var filePath = Path.Combine(EquipmentSetsDirectory, fileName);
+
+            // Verify path is within allowed directory
+            if (!IsPathWithinDirectory(filePath, EquipmentSetsDirectory))
+                throw new ArgumentException("Invalid file name: path traversal detected", nameof(fileName));
 
             var data = new EquipmentSetData
             {
@@ -198,10 +247,15 @@ namespace BotFarm.AI.Tasks
         /// </summary>
         public static bool DeleteByName(string name)
         {
-            if (string.IsNullOrWhiteSpace(name))
+            var sanitizedName = SanitizeName(name);
+            if (sanitizedName == null)
                 return false;
 
-            var filePath = Path.Combine(EquipmentSetsDirectory, $"{name}.json");
+            var filePath = Path.Combine(EquipmentSetsDirectory, $"{sanitizedName}.json");
+
+            // Verify path is within allowed directory
+            if (!IsPathWithinDirectory(filePath, EquipmentSetsDirectory))
+                return false;
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);

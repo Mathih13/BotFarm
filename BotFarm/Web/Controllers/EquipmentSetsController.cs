@@ -52,7 +52,14 @@ namespace BotFarm.Web.Controllers
                 return BadRequest(new { error = "name is required" });
             }
 
-            var set = EquipmentSetLoader.LoadByName(name);
+            // Validate name to prevent path traversal
+            var sanitizedName = EquipmentSetLoader.SanitizeName(name);
+            if (sanitizedName == null)
+            {
+                return BadRequest(new { error = "Invalid name: contains illegal characters" });
+            }
+
+            var set = EquipmentSetLoader.LoadByName(sanitizedName);
             if (set == null)
             {
                 return NotFound(new { error = $"Equipment set '{name}' not found" });
@@ -65,7 +72,7 @@ namespace BotFarm.Web.Controllers
                 : new Dictionary<uint, string>();
 
             // Build the raw JSON for editing
-            var rawJsonPath = Path.Combine(equipmentSetsDirectory, $"{name}.json");
+            var rawJsonPath = Path.Combine(equipmentSetsDirectory, $"{sanitizedName}.json");
             string rawJson = "";
             if (System.IO.File.Exists(rawJsonPath))
             {
@@ -115,15 +122,22 @@ namespace BotFarm.Web.Controllers
                 return BadRequest(new { error = "name is required" });
             }
 
+            // Validate name to prevent path traversal
+            var sanitizedName = EquipmentSetLoader.SanitizeName(request.Name);
+            if (sanitizedName == null)
+            {
+                return BadRequest(new { error = "Invalid name: contains illegal characters" });
+            }
+
             if (string.IsNullOrWhiteSpace(request.Content))
             {
                 return BadRequest(new { error = "content is required" });
             }
 
             // Check if set already exists
-            if (EquipmentSetLoader.Exists(request.Name))
+            if (EquipmentSetLoader.Exists(sanitizedName))
             {
-                return Conflict(new { error = $"Equipment set '{request.Name}' already exists" });
+                return Conflict(new { error = $"Equipment set '{sanitizedName}' already exists" });
             }
 
             try
@@ -141,13 +155,13 @@ namespace BotFarm.Web.Controllers
                 }
 
                 // Write file
-                var filePath = Path.Combine(equipmentSetsDirectory, $"{request.Name}.json");
+                var filePath = Path.Combine(equipmentSetsDirectory, $"{sanitizedName}.json");
                 System.IO.File.WriteAllText(filePath, request.Content);
 
-                factory.Log($"Created equipment set: {request.Name}");
+                factory.Log($"Created equipment set: {sanitizedName}");
 
                 // Return the created set
-                return GetByName(request.Name);
+                return GetByName(sanitizedName);
             }
             catch (JsonException ex)
             {
@@ -171,16 +185,23 @@ namespace BotFarm.Web.Controllers
                 return BadRequest(new { error = "name is required" });
             }
 
+            // Validate name to prevent path traversal
+            var sanitizedName = EquipmentSetLoader.SanitizeName(name);
+            if (sanitizedName == null)
+            {
+                return BadRequest(new { error = "Invalid name: contains illegal characters" });
+            }
+
             if (string.IsNullOrWhiteSpace(request?.Content))
             {
                 return BadRequest(new { error = "content is required" });
             }
 
             // Find the file
-            var filePath = FindEquipmentSetFile(name);
+            var filePath = FindEquipmentSetFile(sanitizedName);
             if (filePath == null)
             {
-                return NotFound(new { error = $"Equipment set '{name}' not found" });
+                return NotFound(new { error = $"Equipment set '{sanitizedName}' not found" });
             }
 
             try
@@ -194,10 +215,10 @@ namespace BotFarm.Web.Controllers
                 // Write file
                 System.IO.File.WriteAllText(filePath, request.Content);
 
-                factory.Log($"Updated equipment set: {name}");
+                factory.Log($"Updated equipment set: {sanitizedName}");
 
                 // Get the new name from the content (in case it changed)
-                var newName = testParse?.Name ?? name;
+                var newName = testParse?.Name ?? sanitizedName;
                 return GetByName(newName);
             }
             catch (JsonException ex)
@@ -206,7 +227,7 @@ namespace BotFarm.Web.Controllers
             }
             catch (Exception ex)
             {
-                factory.Log($"Failed to update equipment set {name}: {ex.Message}");
+                factory.Log($"Failed to update equipment set {sanitizedName}: {ex.Message}");
                 return BadRequest(new { error = ex.Message });
             }
         }
@@ -222,30 +243,42 @@ namespace BotFarm.Web.Controllers
                 return BadRequest(new { error = "name is required" });
             }
 
-            var filePath = FindEquipmentSetFile(name);
+            // Validate name to prevent path traversal
+            var sanitizedName = EquipmentSetLoader.SanitizeName(name);
+            if (sanitizedName == null)
+            {
+                return BadRequest(new { error = "Invalid name: contains illegal characters" });
+            }
+
+            var filePath = FindEquipmentSetFile(sanitizedName);
             if (filePath == null)
             {
-                return NotFound(new { error = $"Equipment set '{name}' not found" });
+                return NotFound(new { error = $"Equipment set '{sanitizedName}' not found" });
             }
 
             try
             {
                 System.IO.File.Delete(filePath);
-                factory.Log($"Deleted equipment set: {name}");
+                factory.Log($"Deleted equipment set: {sanitizedName}");
 
-                return Ok(new { message = $"Equipment set '{name}' deleted" });
+                return Ok(new { message = $"Equipment set '{sanitizedName}' deleted" });
             }
             catch (Exception ex)
             {
-                factory.Log($"Failed to delete equipment set {name}: {ex.Message}");
+                factory.Log($"Failed to delete equipment set {sanitizedName}: {ex.Message}");
                 return BadRequest(new { error = ex.Message });
             }
         }
 
         private string FindEquipmentSetFile(string name)
         {
+            // Sanitize the name (defense in depth - callers should also sanitize)
+            var sanitizedName = EquipmentSetLoader.SanitizeName(name);
+            if (sanitizedName == null)
+                return null;
+
             // Try direct path first
-            var filePath = Path.Combine(equipmentSetsDirectory, $"{name}.json");
+            var filePath = Path.Combine(equipmentSetsDirectory, $"{sanitizedName}.json");
             if (System.IO.File.Exists(filePath))
             {
                 return filePath;
@@ -258,7 +291,7 @@ namespace BotFarm.Web.Controllers
                 foreach (var file in files)
                 {
                     var set = EquipmentSetLoader.LoadFromFile(file);
-                    if (set != null && string.Equals(set.Name, name, StringComparison.OrdinalIgnoreCase))
+                    if (set != null && string.Equals(set.Name, sanitizedName, StringComparison.OrdinalIgnoreCase))
                     {
                         return file;
                     }
