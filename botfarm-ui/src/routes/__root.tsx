@@ -100,6 +100,13 @@ function RootComponent() {
                       Routes
                     </Link>
                     <Link
+                      to="/equipment-sets"
+                      activeProps={{ className: 'text-blue-500 font-semibold' }}
+                      inactiveProps={{ className: 'text-gray-600 hover:text-gray-900' }}
+                    >
+                      Equipment
+                    </Link>
+                    <Link
                       to="/settings"
                       activeProps={{ className: 'text-blue-500 font-semibold' }}
                       inactiveProps={{ className: 'text-gray-600 hover:text-gray-900' }}

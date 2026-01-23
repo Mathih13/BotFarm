@@ -55,6 +55,8 @@ function parseRawJsonToFormData(rawJson: string): RouteFormData {
         startPosition: data.harness.startPosition || null,
         setupTimeoutSeconds: data.harness.setupTimeoutSeconds || 120,
         testTimeoutSeconds: data.harness.testTimeoutSeconds || 600,
+        equipmentSets: data.harness.equipmentSets || [],
+        classEquipmentSets: data.harness.classEquipmentSets || {},
       }
     }
 
@@ -98,6 +100,12 @@ function formDataToJson(formData: RouteFormData): string {
     }
     if (formData.harness.startPosition) {
       harness.startPosition = formData.harness.startPosition
+    }
+    if (formData.harness.equipmentSets && formData.harness.equipmentSets.length > 0) {
+      harness.equipmentSets = formData.harness.equipmentSets
+    }
+    if (formData.harness.classEquipmentSets && Object.keys(formData.harness.classEquipmentSets).length > 0) {
+      harness.classEquipmentSets = formData.harness.classEquipmentSets
     }
     output.harness = harness
   }

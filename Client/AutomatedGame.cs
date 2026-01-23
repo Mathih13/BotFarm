@@ -1979,9 +1979,18 @@ namespace Client
             var packet = new OutPacket(WorldCommand.CMSG_AUTOEQUIP_ITEM);
             packet.Write(containerSlot);
             packet.Write(slot);
-            SendPacket(packet);
 
-            Log($"Auto-equipping item from container {containerSlot} slot {slot}", LogLevel.Debug);
+            Log($"DEBUG: Sending CMSG_AUTOEQUIP_ITEM - container={containerSlot} (0x{containerSlot:X2}), slot={slot} (0x{slot:X2})", LogLevel.Info);
+
+            SendPacket(packet);
+        }
+
+        [PacketHandler(WorldCommand.SMSG_INVENTORY_CHANGE_FAILURE)]
+        protected void HandleInventoryChangeFailure(InPacket packet)
+        {
+            byte error = packet.ReadByte();
+            // Log all errors for debugging
+            Log($"INVENTORY_CHANGE_FAILURE: error code {error}", LogLevel.Warning);
         }
 
         /// <summary>

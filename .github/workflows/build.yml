@@ -101,8 +101,8 @@ jobs:
           # Copy .NET output
           Copy-Item -Path "BotFarm/bin/x64/Release/net8.0/*" -Destination "$releaseDir" -Recurse -Force
 
-          # Copy UI output
-          Copy-Item -Path "botfarm-ui/.output/*" -Destination "$releaseDir/botfarm-ui" -Recurse -Force
+          # Copy UI output (preserve .output directory structure for UILauncher)
+          Copy-Item -Path "botfarm-ui/.output" -Destination "$releaseDir/botfarm-ui/.output" -Recurse -Force
 
           # Copy native libs if present (they may not be in CI)
           if (Test-Path "BotFarm/lib/cli.dll") {

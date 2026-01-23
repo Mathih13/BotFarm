@@ -7,8 +7,10 @@ import {
   hasUncachedIds,
   mergeIntoCache,
   resolveTaskName,
+  getCachedEntityName,
 } from '~/lib/entityNames';
-import type { EntityLookupRequest } from '~/lib/types';
+import { batchEntityNameLookup } from '~/lib/entityNameBatcher';
+import type { EntityLookupRequest, EntityType } from '~/lib/types';
 
 /**
  * Hook to resolve entity names for task displays
@@ -72,6 +74,46 @@ export function useEntityNames(taskNames: string[]) {
   return {
     getDisplayName,
     isLoading: isLoading && shouldFetch,
+    error,
+  };
+}
+
+/**
+ * Hook to lookup a single entity name by type and entry ID
+ *
+ * Uses a batching mechanism to collect multiple lookups within a short time
+ * window and send them as a single API request. This prevents MySQL concurrency
+ * issues when many components mount simultaneously.
+ */
+export function useEntityName(type: EntityType, entry: number) {
+  // Check cache first to avoid query if already cached
+  const cachedName = entry > 0 ? getCachedEntityName(type, entry) : undefined;
+
+  const { data, isLoading, isFetching, isError, error, fetchStatus } = useQuery({
+    queryKey: ['entityName', type, entry],
+    queryFn: () => batchEntityNameLookup(type, entry),
+    staleTime: 5 * 60 * 1000, // 5 minutes - names don't change often
+    gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes
+    enabled: entry > 0 && cachedName === undefined, // Skip query if we have a cached value
+  });
+
+  // Return cached name if available, otherwise query result
+  const entityName = cachedName ?? data;
+
+  // Consider loading if:
+  // - Cache miss and query is loading/fetching
+  // - Cache miss and fetch hasn't completed yet (fetchStatus === 'fetching')
+  // - Query is enabled but hasn't started yet (no cachedName, no data, not an error)
+  const stillLoading = cachedName === undefined && (
+    isLoading ||
+    isFetching ||
+    (entry > 0 && data === undefined && !isError)
+  );
+
+  return {
+    entityName: entityName ?? null,
+    isLoading: stillLoading,
+    isError,
     error,
   };
 }

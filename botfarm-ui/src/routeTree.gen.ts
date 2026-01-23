@@ -13,16 +13,19 @@ import { Route as TestsRouteImport } from './routes/tests'
 import { Route as SuitesRouteImport } from './routes/suites'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RoutesRouteImport } from './routes/routes'
+import { Route as EquipmentSetsRouteImport } from './routes/equipment-sets'
 import { Route as CustomScriptDotjsRouteImport } from './routes/customScript[.]js'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TestsIndexRouteImport } from './routes/tests.index'
 import { Route as SuitesIndexRouteImport } from './routes/suites.index'
 import { Route as RoutesIndexRouteImport } from './routes/routes.index'
+import { Route as EquipmentSetsIndexRouteImport } from './routes/equipment-sets.index'
 import { Route as TestsTestIdRouteImport } from './routes/tests.$testId'
 import { Route as SuitesEditorRouteImport } from './routes/suites.editor'
 import { Route as SuitesDefinitionsRouteImport } from './routes/suites.definitions'
 import { Route as SuitesSuiteIdRouteImport } from './routes/suites.$suiteId'
 import { Route as RoutesEditorRouteImport } from './routes/routes.editor'
+import { Route as EquipmentSetsEditorRouteImport } from './routes/equipment-sets.editor'
 
 const TestsRoute = TestsRouteImport.update({
   id: '/tests',
@@ -42,6 +45,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const RoutesRoute = RoutesRouteImport.update({
   id: '/routes',
   path: '/routes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EquipmentSetsRoute = EquipmentSetsRouteImport.update({
+  id: '/equipment-sets',
+  path: '/equipment-sets',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomScriptDotjsRoute = CustomScriptDotjsRouteImport.update({
@@ -69,6 +77,11 @@ const RoutesIndexRoute = RoutesIndexRouteImport.update({
   path: '/',
   getParentRoute: () => RoutesRoute,
 } as any)
+const EquipmentSetsIndexRoute = EquipmentSetsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EquipmentSetsRoute,
+} as any)
 const TestsTestIdRoute = TestsTestIdRouteImport.update({
   id: '/$testId',
   path: '/$testId',
@@ -94,19 +107,27 @@ const RoutesEditorRoute = RoutesEditorRouteImport.update({
   path: '/editor',
   getParentRoute: () => RoutesRoute,
 } as any)
+const EquipmentSetsEditorRoute = EquipmentSetsEditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => EquipmentSetsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/equipment-sets': typeof EquipmentSetsRouteWithChildren
   '/routes': typeof RoutesRouteWithChildren
   '/settings': typeof SettingsRoute
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
+  '/equipment-sets/editor': typeof EquipmentSetsEditorRoute
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/suites/definitions': typeof SuitesDefinitionsRoute
   '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/equipment-sets/': typeof EquipmentSetsIndexRoute
   '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
   '/tests/': typeof TestsIndexRoute
@@ -115,11 +136,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
   '/settings': typeof SettingsRoute
+  '/equipment-sets/editor': typeof EquipmentSetsEditorRoute
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/suites/definitions': typeof SuitesDefinitionsRoute
   '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/equipment-sets': typeof EquipmentSetsIndexRoute
   '/routes': typeof RoutesIndexRoute
   '/suites': typeof SuitesIndexRoute
   '/tests': typeof TestsIndexRoute
@@ -128,15 +151,18 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/customScript.js': typeof CustomScriptDotjsRoute
+  '/equipment-sets': typeof EquipmentSetsRouteWithChildren
   '/routes': typeof RoutesRouteWithChildren
   '/settings': typeof SettingsRoute
   '/suites': typeof SuitesRouteWithChildren
   '/tests': typeof TestsRouteWithChildren
+  '/equipment-sets/editor': typeof EquipmentSetsEditorRoute
   '/routes/editor': typeof RoutesEditorRoute
   '/suites/$suiteId': typeof SuitesSuiteIdRoute
   '/suites/definitions': typeof SuitesDefinitionsRoute
   '/suites/editor': typeof SuitesEditorRoute
   '/tests/$testId': typeof TestsTestIdRoute
+  '/equipment-sets/': typeof EquipmentSetsIndexRoute
   '/routes/': typeof RoutesIndexRoute
   '/suites/': typeof SuitesIndexRoute
   '/tests/': typeof TestsIndexRoute
@@ -146,15 +172,18 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/customScript.js'
+    | '/equipment-sets'
     | '/routes'
     | '/settings'
     | '/suites'
     | '/tests'
+    | '/equipment-sets/editor'
     | '/routes/editor'
     | '/suites/$suiteId'
     | '/suites/definitions'
     | '/suites/editor'
     | '/tests/$testId'
+    | '/equipment-sets/'
     | '/routes/'
     | '/suites/'
     | '/tests/'
@@ -163,11 +192,13 @@ export interface FileRouteTypes {
     | '/'
     | '/customScript.js'
     | '/settings'
+    | '/equipment-sets/editor'
     | '/routes/editor'
     | '/suites/$suiteId'
     | '/suites/definitions'
     | '/suites/editor'
     | '/tests/$testId'
+    | '/equipment-sets'
     | '/routes'
     | '/suites'
     | '/tests'
@@ -175,15 +206,18 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/customScript.js'
+    | '/equipment-sets'
     | '/routes'
     | '/settings'
     | '/suites'
     | '/tests'
+    | '/equipment-sets/editor'
     | '/routes/editor'
     | '/suites/$suiteId'
     | '/suites/definitions'
     | '/suites/editor'
     | '/tests/$testId'
+    | '/equipment-sets/'
     | '/routes/'
     | '/suites/'
     | '/tests/'
@@ -192,6 +226,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomScriptDotjsRoute: typeof CustomScriptDotjsRoute
+  EquipmentSetsRoute: typeof EquipmentSetsRouteWithChildren
   RoutesRoute: typeof RoutesRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SuitesRoute: typeof SuitesRouteWithChildren
@@ -226,6 +261,13 @@ declare module '@tanstack/react-router' {
       path: '/routes'
       fullPath: '/routes'
       preLoaderRoute: typeof RoutesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/equipment-sets': {
+      id: '/equipment-sets'
+      path: '/equipment-sets'
+      fullPath: '/equipment-sets'
+      preLoaderRoute: typeof EquipmentSetsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customScript.js': {
@@ -263,6 +305,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoutesIndexRouteImport
       parentRoute: typeof RoutesRoute
     }
+    '/equipment-sets/': {
+      id: '/equipment-sets/'
+      path: '/'
+      fullPath: '/equipment-sets/'
+      preLoaderRoute: typeof EquipmentSetsIndexRouteImport
+      parentRoute: typeof EquipmentSetsRoute
+    }
     '/tests/$testId': {
       id: '/tests/$testId'
       path: '/$testId'
@@ -298,8 +347,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoutesEditorRouteImport
       parentRoute: typeof RoutesRoute
     }
+    '/equipment-sets/editor': {
+      id: '/equipment-sets/editor'
+      path: '/editor'
+      fullPath: '/equipment-sets/editor'
+      preLoaderRoute: typeof EquipmentSetsEditorRouteImport
+      parentRoute: typeof EquipmentSetsRoute
+    }
   }
 }
+
+interface EquipmentSetsRouteChildren {
+  EquipmentSetsEditorRoute: typeof EquipmentSetsEditorRoute
+  EquipmentSetsIndexRoute: typeof EquipmentSetsIndexRoute
+}
+
+const EquipmentSetsRouteChildren: EquipmentSetsRouteChildren = {
+  EquipmentSetsEditorRoute: EquipmentSetsEditorRoute,
+  EquipmentSetsIndexRoute: EquipmentSetsIndexRoute,
+}
+
+const EquipmentSetsRouteWithChildren = EquipmentSetsRoute._addFileChildren(
+  EquipmentSetsRouteChildren,
+)
 
 interface RoutesRouteChildren {
   RoutesEditorRoute: typeof RoutesEditorRoute
@@ -346,6 +416,7 @@ const TestsRouteWithChildren = TestsRoute._addFileChildren(TestsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomScriptDotjsRoute: CustomScriptDotjsRoute,
+  EquipmentSetsRoute: EquipmentSetsRouteWithChildren,
   RoutesRoute: RoutesRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SuitesRoute: SuitesRouteWithChildren,

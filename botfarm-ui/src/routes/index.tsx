@@ -238,7 +238,6 @@ function Dashboard() {
                       >
                         {test.routeName}
                       </Link>
-                      <div className="text-xs text-muted-foreground">{test.routePath}</div>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -341,7 +340,6 @@ function ActiveSuiteCard({ suite }: { suite: ApiTestSuiteRun }) {
       <div className="flex justify-between items-start mb-2">
         <div>
           <div className="font-medium">{suite.suiteName}</div>
-          <div className="text-xs text-muted-foreground">{suite.suitePath}</div>
         </div>
         <Badge variant="outline" className={getStatusColor(suite.status)}>
           {getStatusIcon(suite.status)} {suite.status}

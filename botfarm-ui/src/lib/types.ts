@@ -215,6 +215,8 @@ export interface HarnessFormData {
   startPosition: PositionData | null;
   setupTimeoutSeconds: number;
   testTimeoutSeconds: number;
+  equipmentSets: string[];
+  classEquipmentSets: Record<string, string>;
 }
 
 export interface PositionData {
@@ -478,4 +480,50 @@ export interface SuiteTestFormData {
   id: string;
   route: string;
   dependsOn: string[];
+}
+
+// ============ Equipment Set Types ============
+
+export interface ApiEquipmentSetInfo {
+  name: string;
+  description: string | null;
+  classRestriction: string | null;
+  itemCount: number;
+}
+
+export interface ApiEquipmentSetDetail {
+  name: string;
+  description: string | null;
+  classRestriction: string | null;
+  items: ApiEquipmentSetItem[];
+  rawJson: string;
+}
+
+export interface ApiEquipmentSetItem {
+  entry: number;
+  count: number;
+  name: string | null;
+}
+
+export interface CreateEquipmentSetRequest {
+  name: string;
+  content: string;
+}
+
+export interface UpdateEquipmentSetRequest {
+  content: string;
+}
+
+// Equipment Set Editor Form Types
+export interface EquipmentSetFormData {
+  name: string;
+  description: string;
+  classRestriction: string | null;
+  items: EquipmentSetItemFormData[];
+}
+
+export interface EquipmentSetItemFormData {
+  id: string;
+  entry: number;
+  count: number;
 }

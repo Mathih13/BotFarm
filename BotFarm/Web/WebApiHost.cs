@@ -72,6 +72,9 @@ namespace BotFarm.Web
             worldDb.Connect();
             builder.Services.AddSingleton(worldDb);
 
+            // Register item icon service for fetching icons from Wowhead
+            builder.Services.AddSingleton<ItemIconService>();
+
             app = builder.Build();
 
             // Configure middleware pipeline

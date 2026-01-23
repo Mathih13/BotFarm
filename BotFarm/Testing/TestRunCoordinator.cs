@@ -170,7 +170,9 @@ namespace BotFarm.Testing
                 bool needsSetup = harness.Level > 1
                     || (harness.Items?.Count > 0)
                     || (harness.CompletedQuests?.Count > 0)
-                    || harness.StartPosition != null;
+                    || harness.StartPosition != null
+                    || (harness.EquipmentSets?.Count > 0)
+                    || (harness.ClassEquipmentSets?.Count > 0);
 
                 if (needsSetup)
                 {

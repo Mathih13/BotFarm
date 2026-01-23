@@ -73,6 +73,12 @@ namespace BotFarm.AI.Tasks
 
         [JsonPropertyName("saveSnapshot")]
         public string SaveSnapshot { get; set; }
+
+        [JsonPropertyName("equipmentSets")]
+        public List<string> EquipmentSets { get; set; }
+
+        [JsonPropertyName("classEquipmentSets")]
+        public Dictionary<string, string> ClassEquipmentSets { get; set; }
     }
 
     public class ItemGrantData
@@ -230,6 +236,18 @@ namespace BotFarm.AI.Tasks
             // Parse snapshot settings
             settings.RestoreSnapshot = data.RestoreSnapshot;
             settings.SaveSnapshot = data.SaveSnapshot;
+
+            // Parse equipment sets
+            if (data.EquipmentSets != null && data.EquipmentSets.Count > 0)
+            {
+                settings.EquipmentSets = new List<string>(data.EquipmentSets);
+            }
+
+            // Parse class-specific equipment sets
+            if (data.ClassEquipmentSets != null && data.ClassEquipmentSets.Count > 0)
+            {
+                settings.ClassEquipmentSets = new Dictionary<string, string>(data.ClassEquipmentSets);
+            }
 
             return settings;
         }

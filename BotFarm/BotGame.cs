@@ -17,6 +17,7 @@ using DBCStoresCLI;
 using BotFarm.AI;
 using Client.AI.Tasks;
 using BotFarm.AI.Tasks;
+using Client.World.Items;
 
 namespace BotFarm
 {
@@ -358,6 +359,9 @@ namespace BotFarm
                 }
             }
 
+            // Apply equipment sets
+            ApplyEquipmentSets();
+
             // Teleport to start position
             if (harnessSettings.StartPosition != null)
             {
@@ -370,6 +374,201 @@ namespace BotFarm
             }
 
             Log("Harness setup complete");
+        }
+
+        /// <summary>
+        /// Apply equipment sets from harness settings.
+        /// First checks for class-specific override, then falls back to generic equipment sets.
+        /// </summary>
+        private void ApplyEquipmentSets()
+        {
+            if (harnessSettings == null)
+                return;
+
+            var appliedSets = new List<string>();
+
+            // 1. Check for class-specific equipment set override
+            if (harnessSettings.ClassEquipmentSets != null &&
+                harnessSettings.ClassEquipmentSets.Count > 0 &&
+                !string.IsNullOrEmpty(assignedClass))
+            {
+                if (harnessSettings.ClassEquipmentSets.TryGetValue(assignedClass, out var classSetName))
+                {
+                    var classSet = EquipmentSetLoader.LoadByName(classSetName);
+                    if (classSet != null)
+                    {
+                        ApplyEquipmentSetItems(classSet);
+                        appliedSets.Add(classSetName);
+                    }
+                    else
+                    {
+                        Log($"Class equipment set '{classSetName}' not found", LogLevel.Warning);
+                    }
+                }
+            }
+
+            // 2. Apply generic equipment sets (filtered by class restriction)
+            if (harnessSettings.EquipmentSets != null && harnessSettings.EquipmentSets.Count > 0)
+            {
+                foreach (var setName in harnessSettings.EquipmentSets)
+                {
+                    // Skip if we already applied a class-specific set with this name
+                    if (appliedSets.Contains(setName))
+                        continue;
+
+                    var set = EquipmentSetLoader.LoadByName(setName);
+                    if (set == null)
+                    {
+                        Log($"Equipment set '{setName}' not found", LogLevel.Warning);
+                        continue;
+                    }
+
+                    // Check class restriction
+                    if (!string.IsNullOrEmpty(set.ClassRestriction) &&
+                        !string.IsNullOrEmpty(assignedClass) &&
+                        !string.Equals(set.ClassRestriction, assignedClass, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log($"Skipping equipment set '{setName}' - class restriction '{set.ClassRestriction}' doesn't match bot class '{assignedClass}'");
+                        continue;
+                    }
+
+                    ApplyEquipmentSetItems(set);
+                    appliedSets.Add(setName);
+                }
+            }
+
+            if (appliedSets.Count > 0)
+            {
+                Log($"Applied equipment sets: {string.Join(", ", appliedSets)}");
+            }
+        }
+
+        /// <summary>
+        /// Add all items from an equipment set to the bot's inventory and equip them
+        /// </summary>
+        private void ApplyEquipmentSetItems(EquipmentSet set)
+        {
+            if (set?.Items == null || set.Items.Count == 0)
+                return;
+
+            Log($"Applying equipment set '{set.Name}' ({set.Items.Count} items)");
+
+            // Track which item entries we need to equip
+            var entriesToEquip = new HashSet<uint>();
+
+            foreach (var item in set.Items)
+            {
+                Log($"  Adding item {item.Entry} x{item.Count}");
+                AddItem(item.Entry, item.Count);
+
+                if (item.Equip)
+                    entriesToEquip.Add(item.Entry);
+
+                System.Threading.Thread.Sleep(100);
+            }
+
+            if (entriesToEquip.Count == 0)
+                return;
+
+            // Wait for items to appear in inventory
+            System.Threading.Thread.Sleep(1500);
+
+            // Build list of items to equip with their bag slots
+            var itemsToEquip = new List<(byte slot, uint entry, string name)>();
+
+            Log($"  Scanning backpack for {entriesToEquip.Count} items to equip");
+
+            int packSlotBase = (int)PlayerField.PLAYER_FIELD_PACK_SLOT_1;
+
+            for (int slot = 0; slot < 16; slot++)
+            {
+                uint guidLow = Player[packSlotBase + slot * 2];
+                uint guidHigh = Player[packSlotBase + slot * 2 + 1];
+                ulong itemGuid = ((ulong)guidHigh << 32) | guidLow;
+
+                if (itemGuid == 0)
+                    continue;
+
+                if (!Objects.TryGetValue(itemGuid, out var itemObject))
+                    continue;
+
+                uint entry = itemObject.Entry;
+                if (!entriesToEquip.Contains(entry))
+                    continue;
+
+                // Query template if needed
+                var template = ItemCache.Get(entry);
+                if (template == null)
+                {
+                    QueryItem(entry);
+                    for (int i = 0; i < 20 && ItemCache.Get(entry) == null; i++)
+                        System.Threading.Thread.Sleep(100);
+                    template = ItemCache.Get(entry);
+                }
+
+                if (template == null || !template.IsEquippableGear || template.GetEquipmentSlot() < 0)
+                    continue;
+
+                itemsToEquip.Add(((byte)slot, entry, template.Name));
+                entriesToEquip.Remove(entry);
+            }
+
+            if (itemsToEquip.Count == 0)
+            {
+                Log($"  No equippable items found in backpack");
+                return;
+            }
+
+            Log($"  Found {itemsToEquip.Count} items to equip");
+
+            foreach (var (bagSlot, entry, name) in itemsToEquip)
+            {
+                // Get the target equipment slot from the item template
+                var template = ItemCache.Get(entry);
+                if (template == null)
+                    continue;
+
+                int equipSlot = template.GetEquipmentSlot();
+                if (equipSlot < 0)
+                    continue;
+
+                // Check if equipment slot is currently empty
+                int visibleField = (int)PlayerField.PLAYER_VISIBLE_ITEM_1_ENTRYID + equipSlot * 2;
+                uint currentEquipped = Player[visibleField];
+                bool slotIsEmpty = (currentEquipped == 0);
+
+                byte dstSlot = (byte)equipSlot;
+                byte srcSlot = (byte)(23 + bagSlot);  // Backpack starts at inventory slot 23
+                string status = slotIsEmpty ? "empty" : $"replacing {currentEquipped}";
+                Log($"    Equipping {name}: SwapItem dst=(255,{dstSlot}) src=(255,{srcSlot}) ({status})");
+
+                // CMSG_SWAP_ITEM uses container:slot pairs
+                // Format: dstBag, dstSlot, srcBag, srcSlot
+                // With container 255 (player inventory):
+                //   Slots 0-18 = equipment slots
+                //   Slots 23-38 = backpack slots
+                var packet = new OutPacket(WorldCommand.CMSG_SWAP_ITEM);
+                packet.Write((byte)255);     // dstBag - player inventory
+                packet.Write(dstSlot);       // dstSlot - equipment slot (0-18)
+                packet.Write((byte)255);     // srcBag - player inventory
+                packet.Write(srcSlot);       // srcSlot - backpack slot (23-38)
+                SendPacket(packet);
+
+                System.Threading.Thread.Sleep(500);
+            }
+
+            // Wait for server to finalize all swaps
+            System.Threading.Thread.Sleep(1000);
+
+            // Verification
+            Log($"  DEBUG: === VERIFICATION - Equipment slots after equip ===");
+            for (int eqSlot = 0; eqSlot < 19; eqSlot++)
+            {
+                int visibleField = (int)PlayerField.PLAYER_VISIBLE_ITEM_1_ENTRYID + eqSlot * 2;
+                uint equippedEntry = Player[visibleField];
+                if (equippedEntry > 0)
+                    Log($"  DEBUG: Equipment slot {eqSlot} now has entry {equippedEntry}");
+            }
         }
 
         private void CreateRandomCharacter()
