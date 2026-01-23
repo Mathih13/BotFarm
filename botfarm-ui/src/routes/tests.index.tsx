@@ -169,7 +169,7 @@ function TestsIndex() {
                 <SelectContent>
                   {routes.map((route) => (
                     <SelectItem key={route.path} value={route.path}>
-                      {route.name} ({route.path})
+                      {route.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
