@@ -1,0 +1,9 @@
+{
+  "name": "warrior-starter-gear",
+  "description": "Basic level 10 warrior equipment",
+  "classRestriction": "Warrior",
+  "items": [
+    { "entry": 2488, "count": 1 },
+    { "entry": 2089, "count": 1 }
+  ]
+}
