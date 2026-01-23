@@ -185,3 +185,11 @@ export const equipmentSetsApi = {
   delete: (name: string) =>
     fetchApi<{ message: string }>(`/equipment-sets/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 };
+
+// Items API (for item icons)
+export const itemsApi = {
+  getIcons: (entries: number[]) => {
+    const params = entries.map((e) => `entries=${e}`).join('&');
+    return fetchApi<Record<number, string>>(`/items/icons?${params}`);
+  },
+};

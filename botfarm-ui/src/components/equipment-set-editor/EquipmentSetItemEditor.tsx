@@ -3,6 +3,7 @@ import { Input } from '~/components/ui/input'
 import { Button } from '~/components/ui/button'
 import { Label } from '~/components/ui/label'
 import { EntityInput } from '~/components/route-editor/shared/EntityInput'
+import { ItemIcon } from '~/components/ItemIcon'
 import { X } from 'lucide-react'
 
 interface EquipmentSetItemEditorProps {
@@ -20,6 +21,11 @@ export function EquipmentSetItemEditor({
 }: EquipmentSetItemEditorProps) {
   return (
     <div className="flex items-start gap-3 p-3 border rounded-lg bg-muted/30">
+      {/* Item Icon */}
+      <div className="shrink-0 mt-5">
+        <ItemIcon entry={item.entry} size="medium" />
+      </div>
+
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor={`item-${item.id}-entry`} className="text-xs">
