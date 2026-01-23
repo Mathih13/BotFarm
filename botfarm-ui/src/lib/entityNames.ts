@@ -56,6 +56,56 @@ export function getCachedObjectName(id: number): string | undefined {
 }
 
 /**
+ * Get an item name from the cache
+ */
+export function getCachedItemName(id: number): string | undefined {
+  return entityCache.items[id];
+}
+
+/**
+ * Get a cached entity name by type
+ */
+export function getCachedEntityName(
+  type: 'npc' | 'quest' | 'item' | 'object',
+  id: number
+): string | undefined {
+  switch (type) {
+    case 'npc':
+      return entityCache.npcs[id];
+    case 'quest':
+      return entityCache.quests[id];
+    case 'item':
+      return entityCache.items[id];
+    case 'object':
+      return entityCache.objects[id];
+  }
+}
+
+/**
+ * Set a cached entity name by type
+ */
+export function setCachedEntityName(
+  type: 'npc' | 'quest' | 'item' | 'object',
+  id: number,
+  name: string
+): void {
+  switch (type) {
+    case 'npc':
+      entityCache.npcs[id] = name;
+      break;
+    case 'quest':
+      entityCache.quests[id] = name;
+      break;
+    case 'item':
+      entityCache.items[id] = name;
+      break;
+    case 'object':
+      entityCache.objects[id] = name;
+      break;
+  }
+}
+
+/**
  * Extract entity IDs from a task name string
  *
  * Patterns recognized:

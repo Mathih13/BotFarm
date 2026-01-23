@@ -5,6 +5,7 @@ import { entitiesApi } from '~/lib/api'
 import type { EntityType, EntitySearchResult } from '~/lib/types'
 import { Search, Loader2 } from 'lucide-react'
 import { cn } from '~/lib/utils'
+import { useEntityName } from '~/hooks/useEntityNames'
 
 interface EntityInputProps {
   type: EntityType
@@ -19,74 +20,37 @@ const searchCache = new Map<string, EntitySearchResult[]>()
 
 export function EntityInput({ type, value, onChange, className, id }: EntityInputProps) {
   const [inputValue, setInputValue] = useState(value ? String(value) : '')
-  const [entityName, setEntityName] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [searchResults, setSearchResults] = useState<EntitySearchResult[]>([])
   const [isOpen, setIsOpen] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  // Track override name from search selection (takes precedence over hook)
+  const [overrideName, setOverrideName] = useState<string | null>(null)
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
-  const lastLookedUpValue = useRef<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Use the hook for entity name lookup (batched via React Query)
+  const { entityName: hookedName, isLoading: loading, isError } = useEntityName(type, value)
+
+  // Use override name if set, otherwise use hooked name
+  const entityName = overrideName ?? hookedName
+  const error = isError ? 'Lookup failed' : (value > 0 && !loading && !entityName ? 'Not found' : null)
 
   // Sync input value when prop changes (e.g., from external source)
   useEffect(() => {
     if (value && value !== parseInt(inputValue)) {
       setInputValue(String(value))
+      // Clear override when value changes externally
+      setOverrideName(null)
     } else if (!value && inputValue !== '') {
       // Only clear if value is truly 0/undefined
       if (value === 0 || value === undefined) {
         setInputValue('')
+        setOverrideName(null)
       }
     }
   }, [value])
-
-  // Lookup entity name by ID
-  const lookupById = useCallback(async (entryId: number) => {
-    if (!entryId || entryId === 0) {
-      setEntityName(null)
-      setError(null)
-      lastLookedUpValue.current = null
-      return
-    }
-
-    if (entryId === lastLookedUpValue.current) {
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    try {
-      const request = buildLookupRequest(type, [entryId])
-      const response = await entitiesApi.lookup(request)
-      const name = getNameFromResponse(type, entryId, response)
-
-      if (name) {
-        setEntityName(name)
-        setError(null)
-      } else {
-        setEntityName(null)
-        setError('Not found')
-      }
-      lastLookedUpValue.current = entryId
-    } catch (err) {
-      setEntityName(null)
-      setError('Lookup failed')
-      console.error('Entity lookup failed:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [type])
-
-  // Lookup current value on mount and when value changes
-  useEffect(() => {
-    if (value && value > 0) {
-      lookupById(value)
-    }
-  }, [value, lookupById])
 
   // Search by name
   const searchByName = useCallback(async (query: string) => {
@@ -131,8 +95,7 @@ export function EntityInput({ type, value, onChange, className, id }: EntityInpu
     // If empty, clear value
     if (!newValue.trim()) {
       onChange(0)
-      setEntityName(null)
-      setError(null)
+      setOverrideName(null)
       setSearchResults([])
       setIsOpen(false)
       return
@@ -141,14 +104,11 @@ export function EntityInput({ type, value, onChange, className, id }: EntityInpu
     // Check if it's a number
     const numValue = parseInt(newValue)
     if (!isNaN(numValue) && numValue > 0 && String(numValue) === newValue.trim()) {
-      // Direct ID entry - update value and lookup name
+      // Direct ID entry - update value (hook will handle name lookup)
       onChange(numValue)
+      setOverrideName(null) // Clear override so hook can fetch the name
       setSearchResults([])
       setIsOpen(false)
-
-      debounceRef.current = setTimeout(() => {
-        lookupById(numValue)
-      }, 300)
     } else if (newValue.length >= 2) {
       // Text search - debounce the search
       debounceRef.current = setTimeout(() => {
@@ -164,9 +124,7 @@ export function EntityInput({ type, value, onChange, className, id }: EntityInpu
   const handleSelectResult = (result: EntitySearchResult) => {
     setInputValue(String(result.entry))
     onChange(result.entry)
-    setEntityName(result.name)
-    setError(null)
-    lastLookedUpValue.current = result.entry
+    setOverrideName(result.name) // Set override name immediately from search result
     setIsOpen(false)
     setSearchResults([])
     inputRef.current?.focus()
@@ -285,32 +243,3 @@ export function EntityInput({ type, value, onChange, className, id }: EntityInpu
   )
 }
 
-function buildLookupRequest(type: EntityType, ids: number[]) {
-  switch (type) {
-    case 'npc':
-      return { npcEntries: ids }
-    case 'quest':
-      return { questIds: ids }
-    case 'item':
-      return { itemEntries: ids }
-    case 'object':
-      return { objectEntries: ids }
-  }
-}
-
-function getNameFromResponse(
-  type: EntityType,
-  id: number,
-  response: { npcs: Record<number, string>; quests: Record<number, string>; items: Record<number, string>; objects: Record<number, string> }
-): string | null {
-  switch (type) {
-    case 'npc':
-      return response.npcs[id] || null
-    case 'quest':
-      return response.quests[id] || null
-    case 'item':
-      return response.items[id] || null
-    case 'object':
-      return response.objects[id] || null
-  }
-}
