@@ -214,6 +214,11 @@ function EquipmentSetsIndex() {
                           Edit
                         </Link>
                       </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to="/equipment-sets/editor" search={{ copy: set.name }}>
+                          Duplicate
+                        </Link>
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

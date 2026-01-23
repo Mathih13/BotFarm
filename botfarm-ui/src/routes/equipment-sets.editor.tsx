@@ -16,10 +16,12 @@ import {
   SelectValue,
 } from '~/components/ui/select'
 import { EquipmentSetItemEditor } from '~/components/equipment-set-editor/EquipmentSetItemEditor'
+import { Plus } from 'lucide-react'
 
 interface EditorSearch {
   name?: string
   new?: string
+  copy?: string
 }
 
 export const Route = createFileRoute('/equipment-sets/editor')({
@@ -27,6 +29,7 @@ export const Route = createFileRoute('/equipment-sets/editor')({
   validateSearch: (search: Record<string, unknown>): EditorSearch => ({
     name: typeof search.name === 'string' ? search.name : undefined,
     new: typeof search.new === 'string' ? search.new : undefined,
+    copy: typeof search.copy === 'string' ? search.copy : undefined,
   }),
 })
 
@@ -90,24 +93,27 @@ function formDataToJson(formData: EquipmentSetFormData): string {
 }
 
 function EquipmentSetEditor() {
-  const { name, new: newName } = Route.useSearch()
+  const { name, new: newName, copy: copyFrom } = Route.useSearch()
   const navigate = useNavigate()
   const isNew = !!newName
+  const isCopy = !!copyFrom
 
   const [formData, setFormData] = useState<EquipmentSetFormData>(
     getDefaultFormData(newName || 'New Equipment Set')
   )
-  const [loading, setLoading] = useState(!isNew)
+  const [loading, setLoading] = useState(!isNew || isCopy)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isDirty, setIsDirty] = useState(false)
 
   useEffect(() => {
-    if (!isNew && name) {
+    if (isCopy && copyFrom) {
+      loadDataForCopy()
+    } else if (!isNew && name) {
       loadData()
     }
-  }, [name, isNew])
+  }, [name, isNew, copyFrom, isCopy])
 
   async function loadData() {
     try {
@@ -123,10 +129,24 @@ function EquipmentSetEditor() {
     }
   }
 
-  const handleSave = async () => {
-    const setName = isNew ? newName : name
-    if (!setName) return
+  async function loadDataForCopy() {
+    try {
+      setLoading(true)
+      const detail = await equipmentSetsApi.getByName(copyFrom!)
+      const parsed = parseRawJsonToFormData(detail.rawJson)
+      // Modify name to indicate it's a copy
+      parsed.name = `${parsed.name} (Copy)`
+      setFormData(parsed)
+      setError(null)
+      setIsDirty(true) // Mark as dirty since this is a new set
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load equipment set for copying')
+    } finally {
+      setLoading(false)
+    }
+  }
 
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       setError('Equipment set name is required')
       return
@@ -137,18 +157,20 @@ function EquipmentSetEditor() {
       setError(null)
       const json = formDataToJson(formData)
 
-      if (isNew) {
-        await equipmentSetsApi.create({ name: setName, content: json })
-        setSuccess('Equipment set created successfully!')
+      if (isNew || isCopy) {
+        // For new sets and copies, use the form name as the file name
+        const fileName = formData.name.replace(/[^a-z0-9-_]/gi, '-').toLowerCase()
+        await equipmentSetsApi.create({ name: fileName, content: json })
+        setSuccess(isCopy ? 'Equipment set duplicated successfully!' : 'Equipment set created successfully!')
         // Navigate to edit mode
         setTimeout(() => {
           navigate({
             to: '/equipment-sets/editor',
-            search: { name: formData.name },
+            search: { name: fileName },
           })
         }, 1000)
       } else {
-        await equipmentSetsApi.update(setName, json)
+        await equipmentSetsApi.update(name!, json)
         setSuccess('Equipment set saved successfully!')
       }
       setIsDirty(false)
@@ -210,9 +232,9 @@ function EquipmentSetEditor() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">
-            {isNew ? 'Create New Equipment Set' : 'Edit Equipment Set'}
+            {isCopy ? 'Duplicate Equipment Set' : isNew ? 'Create New Equipment Set' : 'Edit Equipment Set'}
           </h1>
-          {!isNew && name && (
+          {!isNew && !isCopy && name && (
             <p className="text-sm text-muted-foreground mt-1">
               Editing: <code className="bg-muted px-1 py-0.5 rounded">{name}</code>
             </p>
@@ -220,6 +242,11 @@ function EquipmentSetEditor() {
           {isNew && newName && (
             <p className="text-sm text-muted-foreground mt-1">
               Creating: <code className="bg-muted px-1 py-0.5 rounded">{newName}</code>
+            </p>
+          )}
+          {isCopy && copyFrom && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Copying from: <code className="bg-muted px-1 py-0.5 rounded">{copyFrom}</code>
             </p>
           )}
         </div>
@@ -231,7 +258,7 @@ function EquipmentSetEditor() {
             Export JSON
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : isNew ? 'Create Set' : 'Save Changes'}
+            {saving ? 'Saving...' : isCopy ? 'Create Copy' : isNew ? 'Create Set' : 'Save Changes'}
           </Button>
         </div>
       </div>
@@ -318,16 +345,13 @@ function EquipmentSetEditor() {
 
         {/* Items */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardHeader>
             <CardTitle>Items</CardTitle>
-            <Button onClick={addItem} size="sm">
-              Add Item
-            </Button>
           </CardHeader>
           <CardContent>
             {formData.items.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">
-                No items added yet. Click "Add Item" to add equipment.
+                No items added yet. Click the button below to add equipment.
               </div>
             ) : (
               <div className="space-y-3">
@@ -342,6 +366,12 @@ function EquipmentSetEditor() {
                 ))}
               </div>
             )}
+            {/* Add Item Button */}
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" size="icon" className="rounded-full" onClick={addItem}>
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
