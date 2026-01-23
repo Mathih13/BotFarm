@@ -369,4 +369,41 @@ namespace BotFarm.Web.Models
     {
         public string Content { get; set; }
     }
+
+    // ============ Equipment Set Models ============
+
+    public class ApiEquipmentSetInfo
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string ClassRestriction { get; set; }
+        public int ItemCount { get; set; }
+    }
+
+    public class ApiEquipmentSetDetail
+    {
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string ClassRestriction { get; set; }
+        public List<ApiEquipmentSetItem> Items { get; set; }
+        public string RawJson { get; set; }
+    }
+
+    public class ApiEquipmentSetItem
+    {
+        public uint Entry { get; set; }
+        public int Count { get; set; }
+        public string Name { get; set; }  // Resolved item name from database
+    }
+
+    public class CreateEquipmentSetRequest
+    {
+        public string Name { get; set; }
+        public string Content { get; set; }
+    }
+
+    public class UpdateEquipmentSetRequest
+    {
+        public string Content { get; set; }
+    }
 }

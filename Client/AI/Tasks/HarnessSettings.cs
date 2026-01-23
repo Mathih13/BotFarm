@@ -68,6 +68,16 @@ namespace Client.AI.Tasks
         /// The character state will be saved for use by dependent tests.
         /// </summary>
         public string SaveSnapshot { get; set; }
+
+        /// <summary>
+        /// List of equipment set names to apply to all bots (filtered by class restriction)
+        /// </summary>
+        public List<string> EquipmentSets { get; set; } = new List<string>();
+
+        /// <summary>
+        /// Class-specific equipment set overrides (key is class name, value is equipment set name)
+        /// </summary>
+        public Dictionary<string, string> ClassEquipmentSets { get; set; } = new Dictionary<string, string>();
     }
 
     /// <summary>

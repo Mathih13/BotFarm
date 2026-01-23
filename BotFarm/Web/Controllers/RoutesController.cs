@@ -358,6 +358,14 @@ namespace BotFarm.Web.Controllers
 
         private ApiRouteInfo LoadRouteInfo(string fullPath, string relativePath)
         {
+            // Skip files in special directories
+            var normalizedPath = relativePath.Replace('\\', '/');
+            if (normalizedPath.StartsWith("suites/", StringComparison.OrdinalIgnoreCase) ||
+                normalizedPath.StartsWith("equipment-sets/", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
             var json = System.IO.File.ReadAllText(fullPath);
             var data = JsonSerializer.Deserialize<RouteFileData>(json, new JsonSerializerOptions
             {
